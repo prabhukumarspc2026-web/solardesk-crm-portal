@@ -1,80 +1,18 @@
-rules_version = '2';
+rules_version='2'
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    function authenticated() { return request.auth != null; }
-    function profilePath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
-    function registered() { return authenticated() && exists(profilePath()); }
-    function enabled() { return registered() && get(profilePath()).data.active == true; }
-    function role() { return get(profilePath()).data.role; }
-    function elevated() { return enabled() && (role() == 'admin' || role() == 'manager'); }
-    function administrator() { return enabled() && role() == 'admin'; }
-    function leadPath(id) { return /databases/$(database)/documents/leads/$(id); }
-    function matchesLead(d) {
-      return d.keys().hasAll(['leadId', 'assignedTo'])
-        && exists(leadPath(d.leadId))
-        && get(leadPath(d.leadId)).data.assignedTo == d.assignedTo;
-    }
-    function canReadAssigned() {
-      return enabled() && (elevated() || resource.data.assignedTo == request.auth.uid);
-    }
-    function canCreateAssigned() {
-      return enabled() && (elevated() ||
-        (request.resource.data.assignedTo == request.auth.uid
-        && request.resource.data.createdBy == request.auth.uid));
-    }
-    function canUpdateAssigned() {
-      return enabled() && (elevated() ||
-        (resource.data.assignedTo == request.auth.uid
-        && request.resource.data.assignedTo == resource.data.assignedTo
-        && request.resource.data.createdBy == resource.data.createdBy));
-    }
-
-    // The first admin profile is created manually in Firebase Console
-    // using the owner's Firebase Authentication UID as the document ID.
-    match /users/{userId} {
-      allow get: if authenticated() && (request.auth.uid == userId || elevated());
-      allow list: if elevated();
-      allow create, update, delete: if administrator();
-    }
-
-    match /leads/{id} {
-      allow get, list: if canReadAssigned();
-      allow create: if canCreateAssigned();
-      allow update: if canUpdateAssigned();
-      allow delete: if administrator();
-    }
-
-    match /followups/{id} {
-      allow get, list: if canReadAssigned();
-      allow create: if matchesLead(request.resource.data) && canCreateAssigned();
-      allow update: if matchesLead(request.resource.data) && canUpdateAssigned()
-        && (elevated() || (request.resource.data.leadId == resource.data.leadId
-        && request.resource.data.assignedTo == resource.data.assignedTo));
-      allow delete: if administrator();
-    }
-    match /quotations/{id} {
-      allow get, list: if canReadAssigned();
-      allow create: if matchesLead(request.resource.data) && canCreateAssigned();
-      allow update: if matchesLead(request.resource.data) && canUpdateAssigned()
-        && (elevated() || (request.resource.data.leadId == resource.data.leadId
-        && request.resource.data.assignedTo == resource.data.assignedTo));
-      allow delete: if administrator();
-    }
-    match /installations/{id} {
-      allow get, list: if canReadAssigned();
-      allow create: if matchesLead(request.resource.data) && canCreateAssigned();
-      allow update: if matchesLead(request.resource.data) && canUpdateAssigned()
-        && (elevated() || (request.resource.data.leadId == resource.data.leadId
-        && request.resource.data.assignedTo == resource.data.assignedTo));
-      allow delete: if administrator();
-    }
-    match /payments/{id} {
-      allow get, list: if canReadAssigned();
-      allow create: if matchesLead(request.resource.data) && canCreateAssigned();
-      allow update: if matchesLead(request.resource.data) && canUpdateAssigned()
-        && (elevated() || (request.resource.data.leadId == resource.data.leadId
-        && request.resource.data.assignedTo == resource.data.assignedTo));
-      allow delete: if administrator();
+    match /{document=**} {
+      // This rule allows anyone with your database reference to view, edit,
+      // and delete all data in your database. It is useful for getting
+      // started, but it is configured to expire after 30 days because it
+      // leaves your app open to attackers. At that time, all client
+      // requests to your database will be denied.
+      //
+      // Make sure to write security rules for your app before that time, or
+      // else all client requests to your database will be denied until you
+      // update your rules.
+      allow read, write: if request.time < timestamp.date(2026, 11, 23);
     }
   }
 }
