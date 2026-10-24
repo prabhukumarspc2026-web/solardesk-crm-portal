@@ -1,6 +1,7 @@
 {
   "firestore": {"rules": "firestore.rules"},
   "hosting": {
+    "site": "spc-solar-crm",
     "public": "public",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [{"source": "**", "destination": "/index.html"}]
