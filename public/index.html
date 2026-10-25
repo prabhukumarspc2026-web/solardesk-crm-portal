@@ -4,28 +4,30 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="theme-color" content="#10233f"/>
-  <meta name="description" content="SolarDesk - solar installation sales, quotations, follow-ups and projects in one secure workspace."/>
-  <title>SolarDesk | Solar Sales Portal</title>
+  <meta name="description" content="SPC Solar - solar installation sales, quotations, follow-ups and projects in one secure workspace."/>
+  <title>SPC Solar | SolarDesk</title>
   <link rel="stylesheet" href="./styles.css"/>
 </head>
 <body>
   <div id="login" class="login-screen hidden">
     <div class="login-card">
-      <div class="logo-tile big">☀</div><div class="login-title">SolarDesk <span>CRM</span></div>
+      <div class="logo-tile big">☀</div><div class="login-title">SPC Solar <span>CRM</span></div>
       <p class="muted">Secure sign-in for your solar sales team</p>
       <form id="login-form" class="stack">
         <label>Email<input name="email" type="email" autocomplete="username" placeholder="you@company.com" required></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
         <button class="btn primary full" type="submit">Sign in <span>→</span></button>
       </form>
+      <p class="login-note">or</p>
+      <button id="google-login" class="btn subtle full hidden" type="button"><strong>G</strong> Continue with Google</button>
       <p id="login-error" class="error-text"></p>
-      <p class="login-note">Accounts are provisioned by your company administrator.</p>
+      <p class="login-note">CRM access is managed by your company administrator.</p>
     </div>
   </div>
   <div id="app" class="app hidden">
     <aside class="sidebar" id="sidebar">
-      <div class="brand"><div class="logo-tile">☀</div><div><strong>SolarDesk</strong><span>SALES CRM</span></div></div>
-      <div class="workspace"><span class="workspace-icon">S</span><div><strong id="company-name">Solar Installation Co.</strong><span>Company workspace</span></div><span class="chevrons">⌄</span></div>
+      <div class="brand"><div class="logo-tile">☀</div><div><strong>SPC Solar</strong><span>SALES CRM</span></div></div>
+      <div class="workspace"><span class="workspace-icon">S</span><div><strong id="company-name">SPC Solar</strong><span>Company workspace</span></div><span class="chevrons">⌄</span></div>
       <div class="nav-caption">WORKSPACE</div>
       <nav id="nav">
         <button class="nav-item active" data-page="dashboard"><span class="nav-symbol">▦</span> Overview</button>
@@ -41,7 +43,7 @@
     </aside>
     <div class="mobile-overlay hidden" id="mobile-overlay"></div>
     <main class="main">
-      <header class="topbar"><div class="topbar-left"><button class="icon-btn menu-btn" id="mobile-menu">☰</button><span class="breadcrumb">Workspace <span class="slash">/</span> <b id="current-page">Overview</b></span></div><div class="topbar-right"><span class="live-pill"><span class="live-dot"></span><span id="mode-indicator">Demo mode</span></span><button class="icon-btn" id="refresh" title="Refresh records">↻</button><div class="top-avatar" id="top-avatar">O</div></div></header>
+      <header class="topbar"><div class="topbar-left"><button class="icon-btn menu-btn" id="mobile-menu">☰</button><span class="breadcrumb">Workspace <span class="slash">/</span> <b id="current-page">Overview</b></span></div><div class="topbar-right"><span class="live-pill"><span class="live-dot"></span><span id="mode-indicator">Demo mode</span></span><button class="icon-btn" id="refresh" title="Refresh records">↻</button><button class="top-avatar" id="top-avatar" type="button" title="Open profile" aria-label="Open profile">O</button></div></header>
       <div id="demo-banner" class="demo-banner"><strong>DEMO PORTAL</strong><span>Sample customer data only. Changes stay in this browser until you connect Firebase.</span><button id="demo-reset">Reset demo</button></div>
       <div class="content">
         <div class="page-head"><div><div class="eyebrow" id="page-eyebrow">SALES COMMAND CENTER</div><h1 id="page-title">Good day, <span id="greeting-name">Owner</span> 👋</h1><p id="page-subtitle">Here's what is happening across your solar sales pipeline.</p></div><div class="head-actions"><button id="export-btn" class="btn subtle">↓ Export leads</button><button id="main-action" class="btn primary">+ New Lead</button></div></div>

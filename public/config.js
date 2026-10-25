@@ -2,4 +2,4 @@
 // Leave empty to use the functional, browser-only demo.
 window.SOLARCRM_FIREBASE_CONFIG = {
 };
-window.SOLARCRM_COMPANY_NAME = "Solar Installation Co.";
+window.SOLARCRM_COMPANY_NAME = "SPC Solar";

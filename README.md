@@ -12,6 +12,7 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 - Installation progress: material, structure, panels, wiring, testing, commissioning, handover.
 - Collections: invoice milestone, amount, pending/received status.
 - Team panel: add/update CRM profiles and deactivate accounts (the real login account itself is created in Firebase Auth console).
+- Google sign-in through Firebase Authentication, alongside email/password sign-in; top-right account button opens the user's profile.
 - CSV export of customer leads; mobile-friendly portal.
 - Local sample-data demo when Firebase settings are missing.
 
@@ -25,9 +26,9 @@ Open `public/index.html` in Chrome. In demo mode sample records are loaded autom
 
 1. Go to https://console.firebase.google.com and create a project. Keep it on the **Spark (no-cost)** plan.
 2. Register a **Web app** in Project settings. Copy the configuration (apiKey, authDomain, projectId, appId) to `public/config.js`, removing the comment markers.
-3. In Firebase Console → **Authentication → Sign-in method**, enable **Email/Password**. In Users, **Add user** for the owner, and copy the owner's **UID**.
+3. In Firebase Console → **Authentication → Sign-in method**, enable **Google** and/or **Email/Password**. Add your production hostname under **Authentication → Settings → Authorized domains**.
 4. In Firebase Console → **Firestore Database**, create a database using **Standard edition**. Use production security mode; the supplied rules will replace the default rules before inviting users. Choose the database region appropriate for your customers and budget.
-5. In Firestore Console, manually create collection `users`, document ID **the exact owner Authentication UID**, with these fields:
+5. The owner signs in with Google or email/password. In Firebase Authentication, copy the owner's **UID**. In Firestore Console, manually create collection `users`, document ID **the exact owner Authentication UID**, with these fields:
    - `name` (string): `Business Owner`
    - `email` (string): `owner@yourcompany.com` (owner login email)
    - `role` (string): `admin`
@@ -44,8 +45,8 @@ Open `public/index.html` in Chrome. In demo mode sample records are loaded autom
    ```
 
    If the CLI says no project is active, run `firebase use --add` and select your project. You can also use Google Cloud Shell when available.
-8. Open `https://YOUR-PROJECT-ID.web.app`. Log in with the owner's email/password.
-9. To onboard team members: in Firebase Authentication, click **Add user** and copy each UID. In the deployed portal open **Sales Team → Add Team Member**, enter matching UID, name, email, `sales` or `manager`, and active=true. Create 10, 20, or more users as required. Don't enable public account registration.
+8. Open `https://YOUR-PROJECT-ID.web.app`. Sign in with the owner's Google account or email/password.
+9. To onboard team members: have each person complete Google sign-in (or create an email/password user in Firebase Authentication), then copy their UID from Firebase Authentication. In the deployed portal open **Sales Team → Add Team Member**, enter the matching UID, name, email, `sales` or `manager`, and active=true. Create 10, 20, or more users as required. Don't enable public account registration.
 10. In Firebase Console check Authentication authorized domains for the hosted domain, and monitor usage under Firebase usage & billing.
 
 **Important:** Register the domain in Firebase Authentication if needed. Do not publish customer data until you have verified staff access using separate test accounts and reviewed the Firestore rules in the Firebase Rules Playground or emulator.
@@ -76,7 +77,7 @@ solar-crm-portal/
 │   ├── index.html       App layout
 │   ├── styles.css       Responsive styling
 │   ├── app.js           CRM logic, demo + Firebase
-│   └── config.js        Add your project's Firebase config
+│   └── config.js        Add Firebase config and set the company name
 ├── firestore.rules     Security rules (required)
 ├── firebase.json       Deployment settings
 └── README.md           This guide
