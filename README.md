@@ -27,8 +27,8 @@ Open `public/index.html` in Chrome. In demo mode sample records are loaded autom
 1. Go to https://console.firebase.google.com and create a project. Keep it on the **Spark (no-cost)** plan.
 2. Register a **Web app** in Project settings. Copy the configuration (apiKey, authDomain, projectId, appId) to `public/config.js`, removing the comment markers.
 3. In Firebase Console → **Authentication → Sign-in method**, enable **Google** and/or **Email/Password**. Add your production hostname under **Authentication → Settings → Authorized domains**.
-4. In Firebase Console → **Firestore Database**, create a database using **Standard edition**. Use production security mode; the supplied rules will replace the default rules before inviting users. Choose the database region appropriate for your customers and budget.
-5. The owner signs in with Google or email/password. In Firebase Authentication, copy the owner's **UID**. In Firestore Console, manually create collection `users`, document ID **the exact owner Authentication UID**, with these fields:
+4. In Firebase Console → **Firestore Database**, create a database using **Standard edition**. Choose the database region appropriate for your customers and budget. Do not enable public access.
+5. Create the owner account in Firebase Authentication (or complete Google sign-in once to create it) and copy the owner's **UID**. In Firestore Console, manually create collection `users`, document ID **the exact owner Authentication UID**, with these fields:
    - `name` (string): `Business Owner`
    - `email` (string): `owner@yourcompany.com` (owner login email)
    - `role` (string): `admin`
@@ -45,7 +45,7 @@ Open `public/index.html` in Chrome. In demo mode sample records are loaded autom
    ```
 
    If the CLI says no project is active, run `firebase use --add` and select your project. You can also use Google Cloud Shell when available.
-8. Open `https://YOUR-PROJECT-ID.web.app`. Sign in with the owner's Google account or email/password.
+8. Open `https://YOUR-PROJECT-ID.web.app`. Sign in with the owner's Google account or email/password. The rules allow a signed-in user to read their own profile; they deny access to CRM records unless that profile is active.
 9. To onboard team members: have each person complete Google sign-in (or create an email/password user in Firebase Authentication), then copy their UID from Firebase Authentication. In the deployed portal open **Sales Team → Add Team Member**, enter the matching UID, name, email, `sales` or `manager`, and active=true. Create 10, 20, or more users as required. Don't enable public account registration.
 10. In Firebase Console check Authentication authorized domains for the hosted domain, and monitor usage under Firebase usage & billing.
 
@@ -60,6 +60,8 @@ Open `public/index.html` in Chrome. In demo mode sample records are loaded autom
 | Salesperson | Yes | No | No | No |
 
 The security rules only allow salespeople to access records with `assignedTo == request.auth.uid`. Manager and admin can read all data. When an admin reassigns a lead in the portal, the app also updates linked quotation, installation, follow-up, and payment records. This sequence is **not atomic**. For important handovers, verify child record access after reassignment; high-volume deployment should move reassignment to a transaction or trusted server.
+
+The supplied `firestore.rules` explicitly allow signed-in users to read their own profile, restrict user-profile changes to admins, and scope salesperson CRM record access to assigned records. A rules file in this repository does not change Firebase Console rules until it is deployed. Deploy with `firebase deploy --only firestore:rules` after creating the initial admin profile; do not replace the deny-all rules with public read/write access.
 
 **Security caveat:** Client-side and Firestore validation are starter-level. Before production use with sensitive customer records, add schema validation, access audits, dependable backups, and rate limiting. Restrict sign-in to provisioned accounts; Firebase Authentication itself is not a complete CRM user lifecycle management interface.
 
