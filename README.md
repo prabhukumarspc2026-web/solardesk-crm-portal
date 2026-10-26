@@ -1,4 +1,4 @@
-# SolarDesk — Free Solar Sales Online Portal
+# My Solar Desk — Free Solar Sales Online Portal
 
 A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **No paid CRM subscription is required** when operating within Firebase Spark plan quotas.
 
