@@ -20,8 +20,28 @@ service cloud.firestore {
       return hasActiveProfile() && role() == 'admin';
     }
 
+    function isBusinessManager() {
+      return isAdmin();
+    }
+
+    function isSalesManager() {
+      return hasActiveProfile() && role() == 'manager';
+    }
+
+    function isProjectManager() {
+      return hasActiveProfile() && role() == 'project_manager';
+    }
+
     function isManagerOrAdmin() {
-      return hasActiveProfile() && role() in ['admin', 'manager'];
+      return isBusinessManager() || isSalesManager() || isProjectManager();
+    }
+
+    function validUserProfile(data) {
+      return data.keys().hasAll(['name', 'email', 'role', 'active'])
+        && data.name is string
+        && data.email is string
+        && data.role in ['admin', 'manager', 'sales', 'project_manager', 'project_executive']
+        && data.active is bool;
     }
 
     function canAccessRecord(data) {
@@ -38,17 +58,31 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if signedIn() && (
         request.auth.uid == userId
-        || isManagerOrAdmin()
+        || isBusinessManager()
+        || (isSalesManager() && resource.data.role == 'sales')
+        || (isProjectManager() && resource.data.role in ['manager', 'sales', 'project_executive'])
       );
-      allow list: if isManagerOrAdmin();
+      allow list: if isBusinessManager()
+        || (isSalesManager() && resource.data.role == 'sales')
+        || (isProjectManager() && resource.data.role in ['manager', 'sales', 'project_executive']);
 
-      allow create, update: if isAdmin()
-        && request.resource.data.keys().hasAll(['name', 'email', 'role', 'active'])
-        && request.resource.data.name is string
-        && request.resource.data.email is string
-        && request.resource.data.role in ['admin', 'manager', 'sales']
-        && request.resource.data.active is bool;
-      allow delete: if isAdmin() && userId != request.auth.uid;
+      allow create: if validUserProfile(request.resource.data)
+        && (
+          isBusinessManager()
+          || (isSalesManager() && request.resource.data.role == 'sales')
+          || (isProjectManager() && request.resource.data.role == 'project_executive')
+        );
+      allow update: if validUserProfile(request.resource.data)
+        && (
+          isBusinessManager()
+          || (isSalesManager() && resource.data.role == 'sales' && request.resource.data.role == 'sales')
+          || (isProjectManager() && resource.data.role == 'project_executive' && request.resource.data.role == 'project_executive')
+        );
+      allow delete: if userId != request.auth.uid && (
+        isBusinessManager()
+        || (isSalesManager() && resource.data.role == 'sales')
+        || (isProjectManager() && resource.data.role == 'project_executive')
+      );
     }
 
     match /{collection}/{recordId} {

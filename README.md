@@ -11,7 +11,7 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 - Quotation proposals with on-grid/hybrid/off-grid, kWp, ₹ amount, expiry and status. An **Accepted** quotation marks its lead as Won.
 - Installation progress: material, structure, panels, wiring, testing, commissioning, handover.
 - Collections: invoice milestone, amount, pending/received status.
-- Team panel: add/update CRM profiles and deactivate accounts (the real login account itself is created in Firebase Auth console).
+- Separate Sales Team and Project Team directories. Business Managers manage both; Sales Managers manage Sales Persons; Project Managers manage Project Executives. Team managers can add or deactivate members only in their own team.
 - Google sign-in through Firebase Authentication, alongside email/password sign-in; top-right account button opens the user's profile.
 - CSV export of customer leads; mobile-friendly portal.
 - Local sample-data demo when Firebase settings are missing.
@@ -20,7 +20,7 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 
 ## Test the demo now
 
-Open `public/index.html` in Chrome. In demo mode sample records are loaded automatically. Use the exit-style icon at the bottom-left to **cycle between Owner, Manager and Salesperson views**. Demo test changes are saved only in browser localStorage. Do **not** enter real customers' personal information in demo mode.
+Open `public/index.html` in Chrome. In demo mode sample records are loaded automatically. Use the exit-style icon at the bottom-left to cycle through Business Manager, Sales Manager, Project Manager, Sales Person, and Project Executive views. Demo test changes are saved only in browser localStorage. Do **not** enter real customers' personal information in demo mode.
 
 ## Publish as an ONLINE portal at a free URL
 
@@ -31,7 +31,7 @@ Open `public/index.html` in Chrome. In demo mode sample records are loaded autom
 5. Create the owner account in Firebase Authentication (or complete Google sign-in once to create it) and copy the owner's **UID**. In Firestore Console, manually create collection `users`, document ID **the exact owner Authentication UID**, with these fields:
    - `name` (string): `Business Owner`
    - `email` (string): `owner@yourcompany.com` (owner login email)
-   - `role` (string): `admin`
+   - `role` (string): `admin` (Business Manager)
    - `active` (boolean): `true`
    **Never create user profiles as public documents or enable open write/read rules.** The first admin profile is created directly in Firebase console because client-side rules intentionally prohibit self-promoting to admin.
 6. Set company name in `public/config.js` using `window.SOLARCRM_COMPANY_NAME`.
@@ -46,22 +46,24 @@ Open `public/index.html` in Chrome. In demo mode sample records are loaded autom
 
    If the CLI says no project is active, run `firebase use --add` and select your project. You can also use Google Cloud Shell when available.
 8. Open `https://YOUR-PROJECT-ID.web.app`. Sign in with the owner's Google account or email/password. The rules allow a signed-in user to read their own profile; they deny access to CRM records unless that profile is active.
-9. To onboard team members: have each person complete Google sign-in (or create an email/password user in Firebase Authentication), then copy their UID from Firebase Authentication. In the deployed portal open **Sales Team → Add Team Member**, enter the matching UID, name, email, `sales` or `manager`, and active=true. Create 10, 20, or more users as required. Don't enable public account registration.
+9. To onboard team members: have each person complete Google sign-in (or create an email/password user in Firebase Authentication), then copy their UID from Firebase Authentication. A Business Manager adds Sales Managers (`manager`) or Sales Persons (`sales`) under **Sales Team**, and Project Managers (`project_manager`) or Project Executives (`project_executive`) under **Project Team**. Sales Managers can add/deactivate Sales Persons; Project Managers can add/deactivate Project Executives. Enter the matching UID, name, email, role, and active status. Don't enable public account registration.
 10. In Firebase Console check Authentication authorized domains for the hosted domain, and monitor usage under Firebase usage & billing.
 
 **Important:** Register the domain in Firebase Authentication if needed. Do not publish customer data until you have verified staff access using separate test accounts and reviewed the Firestore rules in the Firebase Rules Playground or emulator.
 
 ## Roles and privacy
 
-| Role | Own leads | All sales/lead records | Assign salespeople | Manage team roles |
-|---|---|---|---|---|
-| Admin / Owner | Yes | Yes | Yes | Yes |
-| Manager | Yes | Yes | Yes | No |
-| Salesperson | Yes | No | No | No |
+| Role | CRM record access | Team access |
+|---|---|---|
+| Business Manager (`admin`) | All records | Manage Sales and Project teams |
+| Sales Manager (`manager`) | All records | Manage Sales Persons |
+| Project Manager (`project_manager`) | All records | Manage Project Executives |
+| Sales Person (`sales`) | Assigned records only | No team management |
+| Project Executive (`project_executive`) | Assigned records only | No team management |
 
-The security rules only allow salespeople to access records with `assignedTo == request.auth.uid`. Manager and admin can read all data. When an admin reassigns a lead in the portal, the app also updates linked quotation, installation, follow-up, and payment records. This sequence is **not atomic**. For important handovers, verify child record access after reassignment; high-volume deployment should move reassignment to a transaction or trusted server.
+The security rules only allow Sales Persons and Project Executives to access records with `assignedTo == request.auth.uid`. Business Managers and both manager roles can read all CRM records. User-profile rules enforce that Sales Managers can only manage Sales Person profiles and Project Managers can only manage Project Executive profiles. When a manager reassigns a lead in the portal, the app also updates linked quotation, installation, follow-up, and payment records. This sequence is **not atomic**. For important handovers, verify child record access after reassignment; high-volume deployment should move reassignment to a transaction or trusted server.
 
-The supplied `firestore.rules` explicitly allow signed-in users to read their own profile, restrict user-profile changes to admins, and scope salesperson CRM record access to assigned records. A rules file in this repository does not change Firebase Console rules until it is deployed. Deploy with `firebase deploy --only firestore:rules` after creating the initial admin profile; do not replace the deny-all rules with public read/write access.
+The supplied `firestore.rules` allow signed-in users to read their own profile, restrict user-profile reads and changes by team role, and scope member CRM record access to assigned records. A rules file in this repository does not change Firebase Console rules until it is deployed. Deploy with `firebase deploy --only firestore:rules` after creating the initial Business Manager profile; do not replace the rules with public read/write access.
 
 **Security caveat:** Client-side and Firestore validation are starter-level. Before production use with sensitive customer records, add schema validation, access audits, dependable backups, and rate limiting. Restrict sign-in to provisioned accounts; Firebase Authentication itself is not a complete CRM user lifecycle management interface.
 
