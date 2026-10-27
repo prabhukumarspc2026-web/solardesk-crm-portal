@@ -7,6 +7,7 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 - Owner/manager overview with sales pipeline, due follow-ups, deal value, and salesperson performance.
 - Salespeople can see **only leads and records assigned to them**, enforced by Cloud Firestore Security Rules (not merely by hiding buttons).
 - Lead entry: customer/mobile/city, category, solar capacity in kWp, monthly EB bill, source, pipeline stage, due follow-up and notes.
+- Read-only audit history for leads, quotations, follow-ups, collections and installations: every saved field is recorded on creation and each changed field is retained with its previous and updated value, actor and timestamp. Open a record's Edit/Update details to view its timeline at the bottom and append comments; history entries cannot be edited or deleted and follow Firestore record permissions.
 - Follow-up schedule, notes, completed/pending status, overdue flags.
 - Quotation proposals with on-grid/hybrid/off-grid, kWp, ₹ amount, expiry and status. An **Accepted** quotation marks its lead as Won.
 - Installation progress: material, structure, panels, wiring, testing, commissioning, handover.

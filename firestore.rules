@@ -55,6 +55,33 @@ service cloud.firestore {
           && request.resource.data.createdBy == request.auth.uid);
     }
 
+    function historyParentPath(data) {
+      return data.recordType == 'sales'
+        ? /databases/$(database)/documents/leads/$(data.recordId)
+        : data.recordType == 'project'
+          ? /databases/$(database)/documents/installations/$(data.recordId)
+          : data.recordType == 'quotation'
+            ? /databases/$(database)/documents/quotations/$(data.recordId)
+            : data.recordType == 'followup'
+              ? /databases/$(database)/documents/followups/$(data.recordId)
+              : /databases/$(database)/documents/payments/$(data.recordId);
+    }
+
+    function canCreateHistory() {
+      let data = request.resource.data;
+      let parentPath = historyParentPath(data);
+      return hasActiveProfile()
+        && data.recordType in ['sales', 'project', 'quotation', 'followup', 'collection']
+        && data.recordId is string
+        && data.assignedTo is string
+        && data.actorId == request.auth.uid
+        && data.event is string
+        && data.comment is string
+        && exists(parentPath)
+        && canAccessRecord(get(parentPath).data)
+        && data.assignedTo == get(parentPath).data.assignedTo;
+    }
+
     match /users/{userId} {
       allow get: if signedIn() && (
         request.auth.uid == userId
@@ -91,16 +118,18 @@ service cloud.firestore {
         'followups',
         'quotations',
         'installations',
-        'payments'
+        'payments',
+        'history'
       ] && canAccessRecord(resource.data);
 
-      allow create: if collection in [
-        'leads',
-        'followups',
-        'quotations',
-        'installations',
-        'payments'
-      ] && canCreateRecord();
+      allow create: if (collection in [
+          'leads',
+          'followups',
+          'quotations',
+          'installations',
+          'payments'
+        ] && canCreateRecord())
+        || (collection == 'history' && canCreateHistory());
 
       allow update: if collection in [
         'leads',
