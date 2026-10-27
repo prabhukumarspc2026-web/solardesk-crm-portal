@@ -70,7 +70,7 @@ body{background:var(--canvas);color:var(--ink)}
 .top-avatar:hover{background:#f1f5fa}
 .top-avatar-initials{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:50%;background:#1768cd;color:#fff;font-size:11px;font-weight:800}
 .top-profile-name{max-width:150px;overflow:hidden;color:var(--ink);font-weight:600;text-overflow:ellipsis;white-space:nowrap}
-.top-profile-chevron{color:#71849a;font-size:15px;line-height:1}
+.top-profile-chevron{display:block;width:13px;height:13px;flex:none;fill:none;stroke:#71849a;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .live-dot{background:var(--teal)}
 
 .record-history{border-top-color:var(--line)}
@@ -132,7 +132,7 @@ body{background:var(--canvas);color:var(--ink)}
 .dashboard-project-actions .btn{flex:none;padding:8px 10px;font-size:10px;white-space:nowrap}
 .dashboard-project-actions .text-link{flex:none;margin-left:3px;padding:5px 0;font-size:10px;white-space:nowrap}
 .dashboard-legacy-status{display:flex;flex-direction:column;padding:16px}
-.dashboard-legacy-status .dashboard-status-content{flex:1;align-content:center;justify-content:center;grid-template-columns:minmax(90px,125px) minmax(100px,140px);gap:7px;width:100%;max-width:290px;margin:auto;padding-top:18px}
+.dashboard-legacy-status .dashboard-status-content{flex:1;align-content:center;justify-content:center;grid-template-columns:minmax(90px,125px) minmax(100px,140px);gap:16px;width:100%;max-width:290px;margin:auto;padding-top:18px}
 .dashboard-legacy-status .dashboard-donut{width:min(100%,125px)}
 .dashboard-legacy-status .dashboard-legend{gap:9px}
 .dashboard-upcoming .activity-list{max-height:300px;overflow-y:auto}
@@ -181,7 +181,7 @@ body{background:var(--canvas);color:var(--ink)}
   .dashboard-kpi{min-height:132px;padding:11px}
   .dashboard-kpi-icon{top:11px;right:11px}
   .dashboard-projects,.dashboard-status,.dashboard-conversion{padding:13px}
-  .dashboard-legacy-status .dashboard-status-content{grid-template-columns:minmax(100px,120px) minmax(100px,130px);max-width:270px}
+  .dashboard-legacy-status .dashboard-status-content{grid-template-columns:minmax(100px,120px) minmax(100px,130px);gap:12px;max-width:270px}
   .dashboard-projects .panel-head{align-items:flex-start;flex-wrap:wrap}
   .dashboard-project-actions{width:100%;margin-left:0;flex-wrap:wrap}
   .dashboard-project-actions .text-link{margin-left:auto}
