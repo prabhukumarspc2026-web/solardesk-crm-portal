@@ -14,7 +14,8 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 - Collections: invoice milestone, amount, pending/received status.
 - Separate Sales Team and Project Team directories. Business Managers manage both; Sales Managers manage Sales Persons; Project Managers manage Project Executives. Team managers can add or deactivate members only in their own team.
 - Google sign-in through Firebase Authentication, alongside email/password sign-in; top-right account button opens the user's profile.
-- CSV export of customer leads; mobile-friendly portal.
+- CSV export and lead import. From the Leads page, download the Excel-compatible CSV template, fill it in Excel, upload it, edit and validate the preview, then confirm before saving. Imports support up to 500 leads per file; each imported lead is assigned to the signed-in user.
+- Mobile-friendly portal.
 - Local sample-data demo when Firebase settings are missing.
 
 **Not included in the starter version:** quotation PDF generator, EB bill image uploads, automatic WhatsApp messages, email alerts, auto-assigning leads, audit-grade financial reporting, server-side reconciliation, automated backups, offline syncing or multi-tenant companies. All financial figures are informational; verify against accounting records.
