@@ -190,5 +190,5 @@ body{background:var(--canvas);color:var(--ink)}
 }
 @media(max-width:760px){
   .topbar{height:auto;min-height:69px;flex-wrap:wrap;gap:8px;padding:10px 16px}
-  .global-search{order:3;flex:0 0 100%;max-width:none;margin:0}
+  .global-search{order:3;z-index:10;flex:0 0 100%;max-width:none;margin:0}
 }
