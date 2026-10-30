@@ -9,4 +9,4 @@ window.SOLARCRM_FIREBASE_CONFIG = {
   appId: "1:131191687595:web:b3a4b2a5a83553c6c3aaee",
   measurementId: "G-6VT5QQLVYZ"
 };
-window.SOLARCRM_COMPANY_NAME = "SPC Solar";
+window.SOLARCRM_COMPANY_NAME = "Solar Company Name";
