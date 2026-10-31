@@ -64,14 +64,26 @@ service cloud.firestore {
             ? /databases/$(database)/documents/quotations/$(data.recordId)
             : data.recordType == 'followup'
               ? /databases/$(database)/documents/followups/$(data.recordId)
-              : /databases/$(database)/documents/payments/$(data.recordId);
+              : data.recordType == 'collection'
+                ? /databases/$(database)/documents/payments/$(data.recordId)
+                : data.recordType == 'survey'
+                  ? /databases/$(database)/documents/surveys/$(data.recordId)
+                  : data.recordType == 'subsidy'
+                    ? /databases/$(database)/documents/subsidies/$(data.recordId)
+                    : data.recordType == 'loan'
+                      ? /databases/$(database)/documents/loans/$(data.recordId)
+                      : data.recordType == 'inventory'
+                        ? /databases/$(database)/documents/inventory/$(data.recordId)
+                        : data.recordType == 'amc'
+                          ? /databases/$(database)/documents/amcs/$(data.recordId)
+                          : /databases/$(database)/documents/serviceTickets/$(data.recordId);
     }
 
     function canCreateHistory() {
       let data = request.resource.data;
       let parentPath = historyParentPath(data);
       return hasActiveProfile()
-        && data.recordType in ['sales', 'project', 'quotation', 'followup', 'collection']
+        && data.recordType in ['sales', 'project', 'quotation', 'followup', 'collection', 'survey', 'subsidy', 'loan', 'inventory', 'amc', 'serviceTicket']
         && data.recordId is string
         && data.assignedTo is string
         && data.actorId == request.auth.uid
@@ -113,21 +125,37 @@ service cloud.firestore {
     }
 
     match /{collection}/{recordId} {
+      allow read: if collection == 'inventory' && hasActiveProfile();
+
       allow read: if collection in [
         'leads',
         'followups',
         'quotations',
         'installations',
         'payments',
-        'history'
+        'history',
+        'surveys',
+        'subsidies',
+        'loans',
+        'amcs',
+        'serviceTickets',
+        'stockMovements'
       ] && canAccessRecord(resource.data);
+
+      allow create, update, delete: if collection == 'inventory' && isManagerOrAdmin();
+      allow create: if collection == 'stockMovements' && canCreateRecord() && isManagerOrAdmin();
 
       allow create: if (collection in [
           'leads',
           'followups',
           'quotations',
           'installations',
-          'payments'
+          'payments',
+          'surveys',
+          'subsidies',
+          'loans',
+          'amcs',
+          'serviceTickets'
         ] && canCreateRecord())
         || (collection == 'history' && canCreateHistory());
 
@@ -136,7 +164,12 @@ service cloud.firestore {
         'followups',
         'quotations',
         'installations',
-        'payments'
+        'payments',
+        'surveys',
+        'subsidies',
+        'loans',
+        'amcs',
+        'serviceTickets'
       ] && (
         isManagerOrAdmin()
         || (
@@ -151,7 +184,12 @@ service cloud.firestore {
         'followups',
         'quotations',
         'installations',
-        'payments'
+        'payments',
+        'surveys',
+        'subsidies',
+        'loans',
+        'amcs',
+        'serviceTickets'
       ] && canAccessRecord(resource.data);
     }
   }

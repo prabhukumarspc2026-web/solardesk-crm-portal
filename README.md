@@ -7,18 +7,26 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 - Owner/manager overview with sales pipeline, due follow-ups, deal value, and salesperson performance.
 - Salespeople can see **only leads and records assigned to them**, enforced by Cloud Firestore Security Rules (not merely by hiding buttons).
 - Lead entry: customer/mobile/city, category, solar capacity in kWp, monthly EB bill, source, pipeline stage, due follow-up and notes.
+- Eight-stage solar pipeline: New, Contacted, Survey Scheduled, Quote Sent, Negotiation, Won, Lost and Junk. Existing stage names are normalized as records load.
+- Mobile-ready site-survey records for roof area, shading, DISCOM connection, technician notes and photo URLs.
 - Read-only audit history for leads, quotations, follow-ups, collections and installations: every saved field is recorded on creation and each changed field is retained with its previous and updated value, actor and timestamp. Open a record's Edit/Update details to view its timeline at the bottom and append comments; history entries cannot be edited or deleted and follow Firestore record permissions.
 - Follow-up schedule, notes, completed/pending status, overdue flags.
-- Quotation proposals with on-grid/hybrid/off-grid, kWp, ₹ amount, expiry and status. An **Accepted** quotation marks its lead as Won.
-- Installation progress: material, structure, panels, wiring, testing, commissioning, handover.
-- Collections: invoice milestone, amount, pending/received status.
+- Catalog-based solar quotations with product/GST defaults, taxable value, CGST/SGST calculation, PM Surya Ghar central subsidy estimate, manually entered state subsidy and customer net amount. Browser print can save quotations as PDF. Subsidy estimates must be checked against current scheme eligibility and state rules.
+- Ten-step project checklist from material procurement through DISCOM inspection, net-meter installation, subsidy disbursement and handover.
+- PM Surya Ghar application tracker with status/date tracking and dashboard alerts for applications open over 45 days.
+- Customer loan status tracking from application through sanction and disbursement.
+- Shared inventory catalog with low-stock thresholds and stock receipt/issue movements linked to projects. Firebase stock movements use a transaction to prevent issuing more than available stock.
+- Collections with milestone amounts and a printable GST invoice template. Verify statutory invoice fields and tax treatment with your accountant before issuing.
+- After-sales AMC renewals and service-ticket tracking for inverter, panel, wiring and net-meter issues.
+- Sales-source, pipeline-conversion and collections reports with CSV export.
+- Dashboard indicators for due follow-ups, stuck subsidy applications, AMC renewals, surveys and open service tickets.
 - Separate Sales Team and Project Team directories. Business Managers manage both; Sales Managers manage Sales Persons; Project Managers manage Project Executives. Team managers can add or deactivate members only in their own team.
 - Google sign-in through Firebase Authentication, alongside email/password sign-in; top-right account button opens the user's profile.
 - CSV export and lead import. From the Leads page, download the Excel-compatible CSV template, fill it in Excel, upload it, edit and validate the preview, then confirm before saving. Imports support up to 500 leads per file; each imported lead is assigned to the signed-in user.
 - Mobile-friendly portal.
 - Local sample-data demo when Firebase settings are missing.
 
-**Not included in the starter version:** quotation PDF generator, EB bill image uploads, automatic WhatsApp messages, email alerts, auto-assigning leads, audit-grade financial reporting, server-side reconciliation, automated backups, offline syncing or multi-tenant companies. All financial figures are informational; verify against accounting records.
+**Integrations not configured:** actual email/WhatsApp delivery, automated scheduled reminders, direct photo/file upload, DISCOM rule integrations, online subsidy submission, lender integrations and accounting exports. Site survey photo URLs may be recorded. Print templates do not replace accountant-reviewed GST invoices. All financial figures are informational; verify against current scheme rules and accounting records.
 
 ## Test the demo now
 

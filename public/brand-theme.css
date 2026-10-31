@@ -85,6 +85,30 @@ body{background:var(--canvas);color:var(--ink)}
   .topbar-right{gap:10px}
 }
 
+#page-content>.panel+.panel,#page-content>.panel+.panel-head{margin-top:18px}
+#page-content>.panel-head+.panel{margin-top:0}
+#page-content>.panel-head{padding-bottom:10px}
+.print-preview-modal{display:flex;width:min(920px,94vw);max-height:92vh;flex-direction:column;overflow:auto;border-radius:12px;background:#fff;box-shadow:0 20px 70px #102b5640}
+.print-preview-actions{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);background:#fff}
+.print-preview-actions h2{flex:1;margin:0;color:var(--brand-navy);font-size:17px}
+.print-document{width:min(780px,100%);margin:0 auto;padding:34px;color:#1c2d3d}
+.print-document h1{font-size:24px}
+.print-document table{width:100%;margin:22px 0;border-collapse:collapse}
+.print-document th,.print-document td{padding:10px;border:1px solid #d5dce3;text-align:left}
+.print-document .total{text-align:right;font-size:18px;font-weight:bold}
+.print-disclaimer{margin-top:28px;color:#637386;font-size:12px}
+.quote-line-list{display:grid;gap:8px;margin-top:12px}
+.quote-line-row{display:grid;grid-template-columns:minmax(120px,1fr) auto auto auto auto;align-items:center;gap:12px;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:12px}
+@media(max-width:600px){.quote-line-row{grid-template-columns:1fr auto}.quote-line-row>*{min-width:0}}
+@media print{
+  body>*{visibility:hidden!important}
+  #modal-root,.print-preview-layer,.print-preview-modal,.print-document{visibility:visible!important}
+  #modal-root,.print-preview-layer{position:static!important;display:block!important;width:auto!important;height:auto!important;overflow:visible!important;background:#fff!important}
+  .print-preview-modal{display:block!important;width:auto!important;max-height:none!important;overflow:visible!important;box-shadow:none!important}
+  .print-preview-actions{display:none!important}
+  .print-document{width:auto!important;margin:0!important;padding:0!important}
+}
+
 .dashboard-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-bottom:15px}
 .dashboard-kpi{position:relative;display:grid;grid-template-rows:42px auto auto 1fr;gap:3px;min-width:0;min-height:145px;padding:14px;border:1px solid var(--line);border-radius:11px;background:#fff;box-shadow:0 2px 8px #1832520a}
 .dashboard-kpi-icon{position:absolute;top:14px;right:14px;display:grid;width:42px;height:42px;place-items:center;border-radius:50%}
