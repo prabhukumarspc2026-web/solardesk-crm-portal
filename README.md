@@ -9,7 +9,7 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 - Lead entry: customer/mobile/city, category, solar capacity in kWp, monthly EB bill, source, pipeline stage, due follow-up and notes.
 - Eight-stage solar pipeline: New, Contacted, Survey Scheduled, Quote Sent, Negotiation, Won, Lost and Junk. Existing stage names are normalized as records load.
 - Mobile-ready site-survey records for roof area, shading, DISCOM connection, technician notes and photo URLs.
-- Read-only audit history for leads, quotations, follow-ups, collections and installations: every saved field is recorded on creation and each changed field is retained with its previous and updated value, actor and timestamp. Open a record's Edit/Update details to view its timeline at the bottom and append comments; history entries cannot be edited or deleted and follow Firestore record permissions.
+- Read-only audit history for leads, quotations, follow-ups, collections and installations: normal record creation records saved fields, and each changed field is retained with its previous and updated value, actor and timestamp. Bulk-imported leads receive one "Record imported" event to keep writes bounded; subsequent edits use normal field-level history. Open a record's Edit/Update details to view its timeline and append comments; history entries cannot be edited or deleted and follow Firestore record permissions.
 - Follow-up schedule, notes, completed/pending status, overdue flags.
 - Catalog-based solar quotations with product/GST defaults, taxable value, CGST/SGST calculation, PM Surya Ghar central subsidy estimate, manually entered state subsidy and customer net amount. Browser print can save quotations as PDF. Subsidy estimates must be checked against current scheme eligibility and state rules.
 - Ten-step project checklist from material procurement through DISCOM inspection, net-meter installation, subsidy disbursement and handover.
@@ -22,7 +22,8 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 - Dashboard indicators for due follow-ups, stuck subsidy applications, AMC renewals, surveys and open service tickets.
 - Separate Sales Team and Project Team directories. Business Managers manage both; Sales Managers manage Sales Persons; Project Managers manage Project Executives. Team managers can add or deactivate members only in their own team.
 - Google sign-in through Firebase Authentication, alongside email/password sign-in; top-right account button opens the user's profile.
-- CSV export and lead import. From the Leads page, download the Excel-compatible CSV template, fill it in Excel, upload it, edit and validate the preview, then confirm before saving. Imports support up to 500 leads per file; each imported lead is assigned to the signed-in user.
+- CSV export and bulk lead import. From the Leads page, download the Excel-compatible CSV template, fill it in Excel, upload it, edit and validate the paginated preview, then confirm before saving. Firebase imports support up to 20,000 leads per file, write in resumable chunks, and create one audit event per imported lead. Each imported lead is assigned to the signed-in user. Demo mode is limited to 500 leads per file because its data is stored in browser storage.
+- Collection tables show 50 records per page, and the import preview shows 100 rows per page. Firebase records are fetched in cursor-based batches without the previous 1,000-record collection cap. The current client loads all matching records into memory at sign-in; larger workspaces should plan for increased startup time and read usage.
 - Mobile-friendly portal.
 - Local sample-data demo when Firebase settings are missing.
 
@@ -79,7 +80,7 @@ The supplied `firestore.rules` allow signed-in users to read their own profile, 
 
 ## Free-plan conditions
 
-Firebase Spark provides free Firebase Hosting, standard Email/Password Authentication and Cloud Firestore within quotas. As of Oct 2026, standard Cloud Firestore free quota includes **50,000 reads/day, 20,000 writes/day and 1 GiB storage**. Quotas and terms may change. When Spark quota is exceeded, Firebase may temporarily disable that product until quotas reset or the project is upgraded; it is not unlimited. Some services (for example Cloud Storage image uploads) may require paid billing. This starter stores text data only.
+Firebase Spark provides free Firebase Hosting, standard Email/Password Authentication and Cloud Firestore within quotas. As of Oct 2026, standard Cloud Firestore free quota includes **50,000 reads/day, 20,000 writes/day and 1 GiB storage**. Quotas and terms may change. A 20,000-lead import creates at least 40,000 writes because each lead and its audit event are separate documents; therefore, a full import requires sufficient remaining quota across multiple quota periods or a billing-enabled Firebase plan. Imports stopped by a quota or network error can be resumed from the still-open import preview; keep that browser tab open while resuming. When Spark quota is exceeded, Firebase may temporarily disable that product until quotas reset or the project is upgraded; it is not unlimited. Some services (for example Cloud Storage image uploads) may require paid billing. This starter stores text data only.
 
 Official docs: https://firebase.google.com/docs/projects/billing/firebase-pricing-plans | https://firebase.google.com/docs/hosting/quickstart | https://firebase.google.com/docs/firestore/pricing | https://firebase.google.com/docs/firestore/solutions/role-based-access
 
