@@ -34,7 +34,7 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 
 ## Test the demo now
 
-For a customer demo, open `http://localhost:8000/?demo=1` locally or add `?demo=1` to the deployed portal URL. To preview global administration with fictional data, open `http://localhost:8000/?demo=1&role=super_admin`. These URLs always use sample data and skip Firebase sign-in, even when live Firebase is configured. Changes are saved in a separate browser-only demo workspace; use **Reset demo** in the banner to restore the sample data. Use the exit-style icon at the bottom-left to cycle through company roles. Do **not** enter real customers' personal information in demo mode.
+For a customer demo, open `http://localhost:8000/?demo=1` locally or add `?demo=1` to the deployed portal URL. This always uses sample data and skips Firebase sign-in, even when live Firebase is configured. Changes are saved in a separate browser-only demo workspace; use **Reset demo** in the banner to restore the sample data. Use the exit-style icon at the bottom-left to cycle through company roles. Do **not** enter real customers' personal information in demo mode.
 
 ## Publish as an ONLINE portal at a free URL
 
