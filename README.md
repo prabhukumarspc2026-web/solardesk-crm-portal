@@ -5,7 +5,8 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 ## What is included
 
 - Public sales homepage for solar EPC and installation teams, with no-registration demo access and a separate team sign-in. Optional sales email, WhatsApp and 20-minute booking links appear on the homepage and demo when configured.
-- The sample workspace uses a clearly fictional company name and an illustrative, non-zero GST quotation. Confirm actual product-specific tax and subsidy settings before sharing or issuing quotations. The homepage does not publish unverified pricing or invented testimonials.
+- Public pricing page with proposed Starter, Business and Scale plans, annual rates, plan limits, onboarding details, add-on rates, and the five-customer Business launch offer. These are recommendations to validate, not competitor benchmarks; applicable taxes are additional.
+- The sample workspace uses a clearly fictional company name and an illustrative, non-zero GST quotation. Confirm actual product-specific tax and subsidy settings before sharing or issuing quotations. No customer testimonials are invented.
 - Owner/manager overview with sales pipeline, due follow-ups, deal value, and salesperson performance.
 - Salespeople can see **only leads and records assigned to them**, enforced by Cloud Firestore Security Rules (not merely by hiding buttons).
 - Lead entry: customer/mobile/city, category, solar capacity in kWp, monthly EB bill, source, pipeline stage, due follow-up and notes.
@@ -47,12 +48,12 @@ For a customer demo, open `http://localhost:8000/?demo=1` locally or add `?demo=
    - `role` (string): `admin` (Business Manager)
    - `active` (boolean): `true`
    **Never create user profiles as public documents or enable open write/read rules.** The first admin profile is created directly in Firebase console because client-side rules intentionally prohibit self-promoting to admin.
-6. Set your company name in `public/config.js` using `window.SOLARCRM_COMPANY_NAME`. The public homepage is the default entry point; team members use **Log in**, and prospects can open **Try live demo** without registering. Optional sales links can be set there:
+6. Set your company name in `public/config.js` using `window.SOLARCRM_COMPANY_NAME`. The public homepage is the default entry point; team members use **Log in**, and prospects can open **Try live demo** without registering. The pricing page presents the recommended Starter (₹2,999/month; ₹29,990/year, up to 3 users), Business (₹4,999/month; ₹49,990/year, up to 5 users), and Scale (₹8,999/month; ₹89,990/year, up to 15 users) prices. Annual billing is 12 months for the price of 10. Standard one-time onboarding is ₹4,999 for Starter, ₹9,999 for Business, and from ₹19,999 for Scale. The proposed launch offer for the first five customers is Business at ₹3,999/month for the first 12 months plus ₹4,999 onboarding, followed by the stated ₹4,999/month renewal rate. Offer a 14-day assisted trial and state the renewal price before signup. These are launch prices to validate, not market benchmarks; applicable taxes are additional. Review the pricing section for package limits, included Business onboarding, and optional service rates. Optional sales links can be set in `public/config.js`:
    - `window.SOLARCRM_SALES_EMAIL`: email address for sales enquiries.
    - `window.SOLARCRM_WHATSAPP_NUMBER`: WhatsApp number with country code (digits only, for example `919876543210`).
    - `window.SOLARCRM_DEMO_BOOKING_URL`: HTTPS link to your booking calendar.
 
-   Leave a link blank until you have a real destination. The homepage does not show invented pricing or testimonials. The sample company and customer data are fictional; sample GST and subsidy figures are illustrative, so confirm product-specific tax treatment and current eligibility before sharing a quote.
+   Leave a link blank until you have a real destination. No customer testimonials are invented. The sample company and customer data are fictional; sample GST and subsidy figures are illustrative, so confirm product-specific tax treatment and current eligibility before sharing a quote.
 7. Use a computer with Node.js, then run from this extracted project directory:
 
    ```bash
