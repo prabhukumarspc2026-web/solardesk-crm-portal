@@ -50,7 +50,11 @@ before(async () => {
         name: 'Company B', plan: 'scale', active: true, activeUserCount: 1
       }),
       setDoc(doc(db, 'users/owner-a'), {
-        name: 'Owner A', email: 'owner-a@example.com', role: 'admin',
+        name: 'Owner A', email: 'owner-a@example.com', role: 'business_owner',
+        active: true, tenantId: 'tenant-a'
+      }),
+      setDoc(doc(db, 'users/legacy-owner'), {
+        name: 'Legacy Owner', email: 'legacy-owner@example.com', role: 'admin',
         active: true, tenantId: 'tenant-a'
       }),
       setDoc(doc(db, 'users/super-admin-a'), {
@@ -58,14 +62,36 @@ before(async () => {
         active: true
       }),
       setDoc(doc(db, 'users/owner-b'), {
-        name: 'Owner B', email: 'owner-b@example.com', role: 'admin',
+        name: 'Owner B', email: 'owner-b@example.com', role: 'business_owner',
         active: true, tenantId: 'tenant-b'
+      }),
+      setDoc(doc(db, 'users/sales-manager-a'), {
+        name: 'Sales Manager', email: 'sales-manager@example.com', role: 'sales_manager',
+        active: true, tenantId: 'tenant-a'
+      }),
+      setDoc(doc(db, 'users/sales-executive-a'), {
+        name: 'Sales Executive', email: 'sales-executive@example.com', role: 'sales_executive',
+        active: true, tenantId: 'tenant-a'
+      }),
+      setDoc(doc(db, 'users/project-manager-a'), {
+        name: 'Project Manager', email: 'project-manager@example.com', role: 'project_manager',
+        active: true, tenantId: 'tenant-a'
+      }),
+      setDoc(doc(db, 'users/project-executive-a'), {
+        name: 'Project Executive', email: 'project-executive@example.com', role: 'project_executive',
+        active: true, tenantId: 'tenant-a'
       }),
       setDoc(doc(db, 'leads/lead-a'), {
         tenantId: 'tenant-a', assignedTo: 'owner-a', createdBy: 'owner-a'
       }),
       setDoc(doc(db, 'leads/lead-super-admin-assigned'), {
         tenantId: 'tenant-a', assignedTo: 'super-admin-a', createdBy: 'owner-a'
+      }),
+      setDoc(doc(db, 'leads/lead-sales-executive'), {
+        tenantId: 'tenant-a', assignedTo: 'sales-executive-a', createdBy: 'sales-executive-a'
+      }),
+      setDoc(doc(db, 'leads/lead-project-executive'), {
+        tenantId: 'tenant-a', assignedTo: 'project-executive-a', createdBy: 'project-executive-a'
       }),
       setDoc(doc(db, 'leads/lead-b'), {
         tenantId: 'tenant-b', assignedTo: 'owner-b', createdBy: 'owner-b'
@@ -158,12 +184,15 @@ test('enforces tenant boundaries, plan features, and seat caps', async () => {
   await setDoc(doc(superAdminDb, 'leads/lead-admin-created'), {
     tenantId: 'tenant-b', assignedTo: 'owner-b', createdBy: 'super-admin-a'
   });
+
   await assertFails(setDoc(doc(superAdminDb, 'leads/lead-invalid-tenant'), {
     tenantId: 'tenant-missing', assignedTo: 'super-admin-a'
   }));
-  await assertSucceeds(updateDoc(doc(superAdminDb, 'users/owner-b'), { role: 'manager' }));
+  await assertSucceeds(updateDoc(doc(superAdminDb, 'users/owner-b'), { role: 'sales_manager' }));
 
   await assertSucceeds(getDoc(doc(db, 'leads/lead-a')));
+  const legacyOwnerDb = testEnv.authenticatedContext('legacy-owner').firestore();
+  await assertSucceeds(getDoc(doc(legacyOwnerDb, 'leads/lead-a')));
   await assertFails(getDoc(doc(db, 'leads/lead-b')));
   await assertFails(getDoc(doc(db, 'workspaces/tenant-b')));
   await assertSucceeds(getDocs(query(
@@ -209,7 +238,7 @@ test('enforces tenant boundaries, plan features, and seat caps', async () => {
     ...newWorkspaceMetadata
   });
   workspaceBatch.set(doc(superAdminDb, 'users/new-company-owner'), {
-    name: 'New Owner', email: 'new-owner@example.com', role: 'admin',
+    name: 'New Owner', email: 'new-owner@example.com', role: 'business_owner',
     active: true, tenantId: 'tenant-new'
   });
   await assertSucceeds(workspaceBatch.commit());
@@ -248,7 +277,7 @@ test('enforces tenant boundaries, plan features, and seat caps', async () => {
     transaction.set(userRef, {
       name: userId,
       email: `${userId}@example.com`,
-      role: 'sales',
+      role: 'sales_executive',
       active: true,
       tenantId: 'tenant-a'
     });
@@ -292,10 +321,37 @@ test('enforces tenant boundaries, plan features, and seat caps', async () => {
   await assertFails(setDoc(doc(db, 'users/over-limit'), {
     name: 'Over limit',
     email: 'over-limit@example.com',
-    role: 'sales',
+    role: 'sales_executive',
     active: true,
     tenantId: 'tenant-a'
   }));
   await assertFails(addActiveSalesUser('over-limit-transaction'));
 
+});
+
+test('applies the canonical team-role permissions and accepts legacy profile aliases', async () => {
+  const salesManagerDb = testEnv.authenticatedContext('sales-manager-a').firestore();
+  const salesExecutiveDb = testEnv.authenticatedContext('sales-executive-a').firestore();
+  const projectManagerDb = testEnv.authenticatedContext('project-manager-a').firestore();
+  const projectExecutiveDb = testEnv.authenticatedContext('project-executive-a').firestore();
+
+  await assertSucceeds(getDoc(doc(salesManagerDb, 'leads/lead-a')));
+  await assertSucceeds(getDoc(doc(salesManagerDb, 'users/sales-executive-a')));
+  await assertFails(getDoc(doc(salesManagerDb, 'users/project-executive-a')));
+  await assertSucceeds(updateDoc(doc(salesManagerDb, 'users/sales-executive-a'), {
+    name: 'Updated Sales Executive'
+  }));
+  await assertFails(updateDoc(doc(salesManagerDb, 'users/sales-executive-a'), {
+    role: 'project_executive'
+  }));
+
+  await assertSucceeds(getDoc(doc(projectManagerDb, 'leads/lead-a')));
+  await assertSucceeds(getDoc(doc(projectManagerDb, 'users/sales-manager-a')));
+  await assertSucceeds(getDoc(doc(projectManagerDb, 'users/sales-executive-a')));
+  await assertSucceeds(getDoc(doc(projectManagerDb, 'users/project-executive-a')));
+
+  await assertSucceeds(getDoc(doc(salesExecutiveDb, 'leads/lead-sales-executive')));
+  await assertFails(getDoc(doc(salesExecutiveDb, 'leads/lead-a')));
+  await assertSucceeds(getDoc(doc(projectExecutiveDb, 'leads/lead-project-executive')));
+  await assertFails(getDoc(doc(projectExecutiveDb, 'leads/lead-a')));
 });

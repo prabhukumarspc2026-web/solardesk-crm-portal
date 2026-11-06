@@ -44,8 +44,15 @@ service cloud.firestore {
       return get(profilePath()).data.role;
     }
 
+    function canonicalRole(targetRole) {
+      return targetRole == 'admin' ? 'business_owner'
+        : targetRole == 'manager' ? 'sales_manager'
+        : targetRole == 'sales' ? 'sales_executive'
+        : targetRole;
+    }
+
     function isAdmin() {
-      return hasActiveProfile() && role() == 'admin';
+      return hasActiveProfile() && canonicalRole(role()) == 'business_owner';
     }
 
     function isSuperAdmin() {
@@ -56,7 +63,7 @@ service cloud.firestore {
     }
 
     function isSalesManager() {
-      return hasActiveProfile() && role() == 'manager';
+      return hasActiveProfile() && canonicalRole(role()) == 'sales_manager';
     }
 
     function isProjectManager() {
@@ -111,8 +118,8 @@ service cloud.firestore {
 
     function canManageRole(targetRole) {
       return isAdmin()
-        || (isSalesManager() && targetRole == 'sales')
-        || (isProjectManager() && targetRole == 'project_executive');
+        || (isSalesManager() && canonicalRole(targetRole) == 'sales_executive')
+        || (isProjectManager() && canonicalRole(targetRole) == 'project_executive');
     }
 
     function activeSeatWithinLimit() {
@@ -124,17 +131,17 @@ service cloud.firestore {
       return data.keys().hasAll(['name', 'email', 'role', 'active', 'tenantId'])
         && data.name is string
         && data.email is string
-        && data.role in ['admin', 'manager', 'sales', 'project_manager', 'project_executive']
+        && data.role in ['business_owner', 'sales_manager', 'sales_executive', 'project_manager', 'project_executive']
         && data.active is bool
         && data.tenantId == currentTenant();
     }
 
-    function validNewCompanyAdmin(data) {
+    function validNewCompanyOwner(data) {
       return isSuperAdmin()
         && data.keys().hasAll(['name', 'email', 'role', 'active', 'tenantId'])
         && data.name is string
         && data.email is string
-        && data.role == 'admin'
+        && data.role == 'business_owner'
         && data.active == true
         && data.tenantId is string
         && !exists(workspacePath(data.tenantId))
@@ -149,7 +156,7 @@ service cloud.firestore {
         && data.keys().hasAll(['name', 'email', 'role', 'active', 'tenantId'])
         && data.name is string
         && data.email is string
-        && data.role in ['admin', 'manager', 'sales', 'project_manager', 'project_executive']
+        && data.role in ['business_owner', 'sales_manager', 'sales_executive', 'project_manager', 'project_executive']
         && data.active is bool
         && data.tenantId is string
         && exists(workspacePath(data.tenantId));
@@ -337,17 +344,17 @@ service cloud.firestore {
         || (hasActiveProfile()
           && resource.data.tenantId == currentTenant()
           && (isAdmin()
-            || (isSalesManager() && resource.data.role == 'sales')
-            || (isProjectManager() && resource.data.role in ['manager', 'sales', 'project_executive']))
+            || (isSalesManager() && canonicalRole(resource.data.role) == 'sales_executive')
+            || (isProjectManager() && canonicalRole(resource.data.role) in ['sales_manager', 'sales_executive', 'project_executive']))
         )
       );
       allow list: if isSuperAdmin()
         || (hasActiveProfile()
           && resource.data.tenantId == currentTenant()
           && (isAdmin()
-            || (isSalesManager() && resource.data.role == 'sales')
-            || (isProjectManager() && resource.data.role in ['manager', 'sales', 'project_executive'])));
-      allow create: if (isSuperAdmin() && validNewCompanyAdmin(request.resource.data))
+            || (isSalesManager() && canonicalRole(resource.data.role) == 'sales_executive')
+            || (isProjectManager() && canonicalRole(resource.data.role) in ['sales_manager', 'sales_executive', 'project_executive'])));
+      allow create: if (isSuperAdmin() && validNewCompanyOwner(request.resource.data))
         || (isSuperAdmin() && validSuperAdminTenantUser(request.resource.data))
         || (!isSuperAdmin()
           && validUserProfile(request.resource.data)
@@ -361,7 +368,8 @@ service cloud.firestore {
           && resource.data.tenantId == currentTenant()
           && request.resource.data.tenantId == resource.data.tenantId
           && canManageRole(resource.data.role)
-          && (isAdmin() || request.resource.data.role == resource.data.role)
+          && (isAdmin()
+            || canonicalRole(request.resource.data.role) == canonicalRole(resource.data.role))
           && validUserSeatChange());
       allow delete: if false;
     }
