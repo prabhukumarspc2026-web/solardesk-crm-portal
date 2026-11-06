@@ -49,14 +49,15 @@ const $app=$('#app');
 function canCreateActiveUser(existing,active){return !active||existing?.active===true||num(db.workspace?.activeUserCount)<planSeatLimit()}
 function featurePageAllowed(page){if(superAdmin())return Boolean(PAGES[page]);return page==='dashboard'||page==='leads'||page==='profile'||(page==='subscription'&&(isDemo&&businessManager()))||page==='salesTeam'||page==='projectTeam'||planHasFeature(page)}
 function updateSalesLinks(){
- const email=String(window.SOLARCRM_SALES_EMAIL||'').trim(),phone=String(window.SOLARCRM_WHATSAPP_NUMBER||'').replace(/\D/g,''),booking=String(window.SOLARCRM_DEMO_BOOKING_URL||'').trim();
- const validEmail=/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(email),validPhone=phone.length>=8;
+ const email=String(window.SOLARCRM_SALES_EMAIL||'').trim(),phone=String(window.SOLARCRM_WHATSAPP_NUMBER||'').replace(/\D/g,''),salesPhone=String(window.SOLARCRM_SALES_PHONE||'').replace(/\D/g,''),booking=String(window.SOLARCRM_DEMO_BOOKING_URL||'').trim();
+ const validEmail=/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(email),validPhone=phone.length>=8,validSalesPhone=salesPhone.length>=10&&salesPhone.length<=15;
  let validBooking=false;try{validBooking=new URL(booking).protocol==='https:'}catch{}
  document.querySelectorAll('[data-contact-email]').forEach(link=>{link.classList.toggle('hidden',!validEmail);if(validEmail){link.href=`mailto:${email}`;link.textContent=link.closest('.demo-banner-actions')?'Email sales':'Email the sales team'}})
  document.querySelectorAll('[data-contact-whatsapp]').forEach(link=>{link.classList.toggle('hidden',!validPhone);if(validPhone)link.href=`https://wa.me/${phone}`})
+ document.querySelectorAll('[data-contact-phone]').forEach(link=>{link.classList.toggle('hidden',!validSalesPhone||link.classList.contains('greeting-call')&&!requestedDemo);if(validSalesPhone){const displayPhone=salesPhone.startsWith('91')&&salesPhone.length===12?`+91 ${salesPhone.slice(2)}`:`+${salesPhone}`;link.href=`tel:+${salesPhone}`;link.textContent=`Call ${displayPhone}`}})
  document.querySelectorAll('[data-demo-booking]').forEach(link=>{link.classList.toggle('hidden',!validBooking);if(validBooking)link.href=booking})
- document.querySelectorAll('[data-sales-contact]').forEach(group=>group.classList.toggle('hidden',!(validEmail||validPhone||validBooking)))
- const note=$('[data-contact-setup]');if(note)note.classList.toggle('hidden',validEmail||validPhone||validBooking)
+ document.querySelectorAll('[data-sales-contact]').forEach(group=>group.classList.toggle('hidden',!(validEmail||validPhone||validSalesPhone||validBooking)))
+ const note=$('[data-contact-setup]');if(note)note.classList.toggle('hidden',validEmail||validPhone||validSalesPhone||validBooking)
 }
 function toast(msg,error=false){const div=document.createElement('div');div.className='toast'+(error?' error':'');div.textContent=msg;$('#toast-root').appendChild(div);setTimeout(()=>div.remove(),3400)}
 function isoOffset(days){let d=new Date();d.setDate(d.getDate()+days);return d.toLocaleDateString('en-CA')}

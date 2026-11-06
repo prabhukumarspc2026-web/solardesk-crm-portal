@@ -14,4 +14,5 @@ window.SOLARCRM_COMPANY_NAME = "Solar Company Name";
 // Optional sales links shown on the public homepage and in the demo.
 window.SOLARCRM_SALES_EMAIL = "";
 window.SOLARCRM_WHATSAPP_NUMBER = "";
+window.SOLARCRM_SALES_PHONE = "919042640908";
 window.SOLARCRM_DEMO_BOOKING_URL = "";
