@@ -4,6 +4,8 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 
 ## What is included
 
+- Public sales homepage for solar EPC and installation teams, with no-registration demo access and a separate team sign-in. Optional sales email, WhatsApp and 20-minute booking links appear on the homepage and demo when configured.
+- The sample workspace uses a clearly fictional company name and an illustrative, non-zero GST quotation. Confirm actual product-specific tax and subsidy settings before sharing or issuing quotations. The homepage does not publish unverified pricing or invented testimonials.
 - Owner/manager overview with sales pipeline, due follow-ups, deal value, and salesperson performance.
 - Salespeople can see **only leads and records assigned to them**, enforced by Cloud Firestore Security Rules (not merely by hiding buttons).
 - Lead entry: customer/mobile/city, category, solar capacity in kWp, monthly EB bill, source, pipeline stage, due follow-up and notes.
@@ -45,7 +47,12 @@ For a customer demo, open `http://localhost:8000/?demo=1` locally or add `?demo=
    - `role` (string): `admin` (Business Manager)
    - `active` (boolean): `true`
    **Never create user profiles as public documents or enable open write/read rules.** The first admin profile is created directly in Firebase console because client-side rules intentionally prohibit self-promoting to admin.
-6. Set company name in `public/config.js` using `window.SOLARCRM_COMPANY_NAME`.
+6. Set your company name in `public/config.js` using `window.SOLARCRM_COMPANY_NAME`. The public homepage is the default entry point; team members use **Log in**, and prospects can open **Try live demo** without registering. Optional sales links can be set there:
+   - `window.SOLARCRM_SALES_EMAIL`: email address for sales enquiries.
+   - `window.SOLARCRM_WHATSAPP_NUMBER`: WhatsApp number with country code (digits only, for example `919876543210`).
+   - `window.SOLARCRM_DEMO_BOOKING_URL`: HTTPS link to your booking calendar.
+
+   Leave a link blank until you have a real destination. The homepage does not show invented pricing or testimonials. The sample company and customer data are fictional; sample GST and subsidy figures are illustrative, so confirm product-specific tax treatment and current eligibility before sharing a quote.
 7. Use a computer with Node.js, then run from this extracted project directory:
 
    ```bash
@@ -91,6 +98,7 @@ solar-crm-portal/
 ├── public/
 │   ├── index.html       App layout
 │   ├── styles.css       Responsive styling
+│   ├── landing.css      Public sales homepage styling
 │   ├── app.js           CRM logic, demo + Firebase
 │   └── config.js        Add Firebase config and set the company name
 ├── firestore.rules     Security rules (required)

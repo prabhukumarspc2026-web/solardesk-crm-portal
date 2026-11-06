@@ -10,3 +10,8 @@ window.SOLARCRM_FIREBASE_CONFIG = {
   measurementId: "G-6VT5QQLVYZ"
 };
 window.SOLARCRM_COMPANY_NAME = "Solar Company Name";
+
+// Optional sales links shown on the public homepage and in the demo.
+window.SOLARCRM_SALES_EMAIL = "";
+window.SOLARCRM_WHATSAPP_NUMBER = "";
+window.SOLARCRM_DEMO_BOOKING_URL = "";
