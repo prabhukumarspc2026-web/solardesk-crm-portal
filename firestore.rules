@@ -6,22 +6,41 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function profilePath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
     function hasActiveProfile() {
       return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true;
+        && exists(profilePath())
+        && get(profilePath()).data.active == true
+        && get(profilePath()).data.tenantId is string
+        && exists(/databases/$(database)/documents/workspaces/$(get(profilePath()).data.tenantId))
+        && get(/databases/$(database)/documents/workspaces/$(get(profilePath()).data.tenantId)).data.active == true;
+    }
+
+    function currentTenant() {
+      return get(profilePath()).data.tenantId;
+    }
+
+    function workspacePath(tenant) {
+      return /databases/$(database)/documents/workspaces/$(tenant);
+    }
+
+    function workspace() {
+      return get(workspacePath(currentTenant())).data;
     }
 
     function role() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      return get(profilePath()).data.role;
     }
 
     function isAdmin() {
       return hasActiveProfile() && role() == 'admin';
     }
 
-    function isBusinessManager() {
-      return isAdmin();
+    function isSuperAdmin() {
+      return hasActiveProfile() && role() == 'super_admin';
     }
 
     function isSalesManager() {
@@ -33,164 +52,246 @@ service cloud.firestore {
     }
 
     function isManagerOrAdmin() {
-      return isBusinessManager() || isSalesManager() || isProjectManager();
+      return isAdmin() || isSalesManager() || isProjectManager();
     }
 
-    function validUserProfile(data) {
-      return data.keys().hasAll(['name', 'email', 'role', 'active'])
-        && data.name is string
-        && data.email is string
-        && data.role in ['admin', 'manager', 'sales', 'project_manager', 'project_executive']
-        && data.active is bool;
+    function seatLimit(plan) {
+      return plan == 'starter' ? 3 : plan == 'business' ? 5 : plan == 'scale' ? 15 : 0;
+    }
+
+    function planAllows(feature) {
+      return feature in ['leads', 'followups', 'surveys', 'quotations', 'installations']
+        || (workspace().plan in ['business', 'scale']
+          && feature in ['payments', 'subsidies', 'loans'])
+        || (workspace().plan == 'scale'
+          && feature in ['inventory', 'stockMovements', 'reports', 'afterSales', 'amcs', 'serviceTickets']);
+    }
+
+    function featureForCollection(collection) {
+      return collection == 'leads' ? 'leads'
+        : collection == 'followups' ? 'followups'
+        : collection == 'quotations' ? 'quotations'
+        : collection == 'installations' ? 'installations'
+        : collection == 'surveys' ? 'surveys'
+        : collection == 'payments' ? 'payments'
+        : collection == 'subsidies' ? 'subsidies'
+        : collection == 'loans' ? 'loans'
+        : collection == 'inventory' ? 'inventory'
+        : collection == 'stockMovements' ? 'stockMovements'
+        : collection == 'amcs' ? 'amcs'
+        : collection == 'serviceTickets' ? 'serviceTickets'
+        : '';
+    }
+
+    function validTenant(data) {
+      return hasActiveProfile() && data.tenantId == currentTenant();
     }
 
     function canAccessRecord(data) {
-      return isManagerOrAdmin() || (hasActiveProfile() && data.assignedTo == request.auth.uid);
+      return isManagerOrAdmin() || data.assignedTo == request.auth.uid;
     }
 
-    function canCreateRecord() {
-      return isManagerOrAdmin()
-        || (hasActiveProfile()
-          && request.resource.data.assignedTo == request.auth.uid
-          && request.resource.data.createdBy == request.auth.uid);
+    function canManageRole(targetRole) {
+      return isAdmin()
+        || (isSalesManager() && targetRole == 'sales')
+        || (isProjectManager() && targetRole == 'project_executive');
     }
 
-    function historyParentPath(data) {
-      return data.recordType == 'sales'
-        ? /databases/$(database)/documents/leads/$(data.recordId)
-        : data.recordType == 'project'
-          ? /databases/$(database)/documents/installations/$(data.recordId)
-          : data.recordType == 'quotation'
-            ? /databases/$(database)/documents/quotations/$(data.recordId)
-            : data.recordType == 'followup'
-              ? /databases/$(database)/documents/followups/$(data.recordId)
-              : data.recordType == 'collection'
-                ? /databases/$(database)/documents/payments/$(data.recordId)
-                : data.recordType == 'survey'
-                  ? /databases/$(database)/documents/surveys/$(data.recordId)
-                  : data.recordType == 'subsidy'
-                    ? /databases/$(database)/documents/subsidies/$(data.recordId)
-                    : data.recordType == 'loan'
-                      ? /databases/$(database)/documents/loans/$(data.recordId)
-                      : data.recordType == 'inventory'
-                        ? /databases/$(database)/documents/inventory/$(data.recordId)
-                        : data.recordType == 'amc'
-                          ? /databases/$(database)/documents/amcs/$(data.recordId)
-                          : /databases/$(database)/documents/serviceTickets/$(data.recordId);
+    function activeSeatWithinLimit() {
+      let tenantWorkspace = getAfter(workspacePath(currentTenant())).data;
+      return tenantWorkspace.activeUserCount <= seatLimit(tenantWorkspace.plan);
     }
 
-    function canCreateHistory() {
-      let data = request.resource.data;
-      let parentPath = historyParentPath(data);
-      return hasActiveProfile()
-        && data.recordType in ['sales', 'project', 'quotation', 'followup', 'collection', 'survey', 'subsidy', 'loan', 'inventory', 'amc', 'serviceTicket']
-        && data.recordId is string
-        && data.assignedTo is string
-        && data.actorId == request.auth.uid
-        && data.event is string
-        && data.comment is string
-        && exists(parentPath)
-        && canAccessRecord(get(parentPath).data)
-        && data.assignedTo == get(parentPath).data.assignedTo;
+    function validUserProfile(data) {
+      return data.keys().hasAll(['name', 'email', 'role', 'active', 'tenantId'])
+        && data.name is string
+        && data.email is string
+        && data.role in ['admin', 'manager', 'sales', 'project_manager', 'project_executive']
+        && data.active is bool
+        && data.tenantId == currentTenant();
+    }
+
+    function validUserSeatChange() {
+      let oldActive = resource.data.active == true;
+      let newActive = request.resource.data.active == true;
+      let countBefore = get(workspacePath(currentTenant())).data.activeUserCount;
+      let countAfter = getAfter(workspacePath(currentTenant())).data.activeUserCount;
+      return oldActive == newActive
+        || (countAfter == countBefore + (newActive ? 1 : -1)
+          && (!newActive || countAfter <= seatLimit(getAfter(workspacePath(currentTenant())).data.plan)));
+    }
+
+    function validNewUserSeat() {
+      let countBefore = get(workspacePath(currentTenant())).data.activeUserCount;
+      let countAfter = getAfter(workspacePath(currentTenant())).data.activeUserCount;
+      return request.resource.data.active != true
+        || (countAfter == countBefore + 1
+          && countAfter <= seatLimit(getAfter(workspacePath(currentTenant())).data.plan));
+    }
+
+    function validWorkspaceSeatUpdate(tenant) {
+      let memberPath = /databases/$(database)/documents/users/$(request.resource.data.lastSeatChangeUid);
+      let wasActive = exists(memberPath) && get(memberPath).data.active == true;
+      let isActive = existsAfter(memberPath) && getAfter(memberPath).data.active == true;
+      let countChange = isActive && !wasActive ? 1 : (!isActive && wasActive ? -1 : 0);
+      let member = getAfter(memberPath).data;
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['activeUserCount', 'lastSeatChangeUid', 'lastSeatChangeAction', 'updatedAt'])
+        && request.resource.data.activeUserCount == resource.data.activeUserCount + countChange
+        && countChange != 0
+        && member.tenantId == tenant
+        && canManageRole(member.role)
+        && (!isActive || request.resource.data.activeUserCount <= seatLimit(request.resource.data.plan));
+    }
+
+    function collectionAllowed(collection) {
+      return collection == 'catalog' || planAllows(featureForCollection(collection));
+    }
+
+    function canCreateRecord(collection) {
+      return validTenant(request.resource.data)
+        && collectionAllowed(collection)
+        && (isManagerOrAdmin()
+          || (request.resource.data.assignedTo == request.auth.uid
+            && request.resource.data.createdBy == request.auth.uid));
+    }
+
+    function historyFeatureMatches(data) {
+      return (data.recordType == 'sales' && data.feature == 'leads')
+        || (data.recordType == 'quotation' && data.feature == 'quotations')
+        || (data.recordType == 'followup' && data.feature == 'followups')
+        || (data.recordType == 'collection' && data.feature == 'payments')
+        || (data.recordType == 'project' && data.feature == 'installations')
+        || (data.recordType == 'survey' && data.feature == 'surveys')
+        || (data.recordType == 'subsidy' && data.feature == 'subsidies')
+        || (data.recordType == 'loan' && data.feature == 'loans')
+        || (data.recordType == 'inventory' && data.feature == 'inventory')
+        || (data.recordType in ['amc', 'serviceTicket'] && data.feature == 'afterSales');
+    }
+
+    match /workspaces/{workspaceId} {
+      allow get: if hasActiveProfile() && currentTenant() == workspaceId;
+      allow list: if false;
+      allow create, delete: if false;
+      allow update: if hasActiveProfile()
+        && currentTenant() == workspaceId
+        && (
+          (isSuperAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plan', 'updatedAt'])
+            && request.resource.data.plan in ['starter', 'business', 'scale'])
+          || (isManagerOrAdmin() && validWorkspaceSeatUpdate(workspaceId))
+        );
     }
 
     match /users/{userId} {
       allow get: if signedIn() && (
         request.auth.uid == userId
-        || isBusinessManager()
-        || (isSalesManager() && resource.data.role == 'sales')
-        || (isProjectManager() && resource.data.role in ['manager', 'sales', 'project_executive'])
+        || (hasActiveProfile()
+          && !exists(/databases/$(database)/documents/users/$(userId))
+          && isManagerOrAdmin())
+        || (hasActiveProfile()
+          && resource.data.tenantId == currentTenant()
+          && (isAdmin()
+            || (isSalesManager() && resource.data.role == 'sales')
+            || (isProjectManager() && resource.data.role in ['manager', 'sales', 'project_executive']))
+        )
       );
-      allow list: if isBusinessManager()
-        || (isSalesManager() && resource.data.role == 'sales')
-        || (isProjectManager() && resource.data.role in ['manager', 'sales', 'project_executive']);
-
+      allow list: if hasActiveProfile()
+        && resource.data.tenantId == currentTenant()
+        && (isAdmin()
+          || (isSalesManager() && resource.data.role == 'sales')
+          || (isProjectManager() && resource.data.role in ['manager', 'sales', 'project_executive']));
       allow create: if validUserProfile(request.resource.data)
-        && (
-          isBusinessManager()
-          || (isSalesManager() && request.resource.data.role == 'sales')
-          || (isProjectManager() && request.resource.data.role == 'project_executive')
-        );
+        && canManageRole(request.resource.data.role)
+        && validNewUserSeat();
       allow update: if validUserProfile(request.resource.data)
-        && (
-          isBusinessManager()
-          || (isSalesManager() && resource.data.role == 'sales' && request.resource.data.role == 'sales')
-          || (isProjectManager() && resource.data.role == 'project_executive' && request.resource.data.role == 'project_executive')
-        );
-      allow delete: if userId != request.auth.uid && (
-        isBusinessManager()
-        || (isSalesManager() && resource.data.role == 'sales')
-        || (isProjectManager() && resource.data.role == 'project_executive')
-      );
+        && resource.data.tenantId == currentTenant()
+        && request.resource.data.tenantId == resource.data.tenantId
+        && canManageRole(resource.data.role)
+        && (isAdmin() || request.resource.data.role == resource.data.role)
+        && validUserSeatChange();
+      allow delete: if false;
     }
 
     match /{collection}/{recordId} {
-      allow read: if collection == 'inventory' && hasActiveProfile();
+      allow read: if collection == 'catalog'
+          && validTenant(resource.data)
+        || collection == 'inventory'
+          && planAllows('inventory')
+          && validTenant(resource.data)
+        || collection == 'history'
+          && validTenant(resource.data)
+          && historyFeatureMatches(resource.data)
+          && planAllows(resource.data.feature)
+          && canAccessRecord(resource.data)
+        || collection in [
+          'leads', 'followups', 'quotations', 'installations', 'payments',
+          'surveys', 'subsidies', 'loans', 'stockMovements', 'amcs', 'serviceTickets'
+        ]
+          && collectionAllowed(collection)
+          && validTenant(resource.data)
+          && canAccessRecord(resource.data);
 
-      allow read: if collection in [
-        'leads',
-        'followups',
-        'quotations',
-        'installations',
-        'payments',
-        'history',
-        'surveys',
-        'subsidies',
-        'loans',
-        'amcs',
-        'serviceTickets',
-        'stockMovements'
-      ] && canAccessRecord(resource.data);
+      allow create: if collection == 'catalog'
+          && validTenant(request.resource.data)
+          && isManagerOrAdmin()
+        || collection == 'inventory'
+          && planAllows('inventory')
+          && canCreateRecord(collection)
+          && isManagerOrAdmin()
+        || collection == 'stockMovements'
+          && planAllows('stockMovements')
+          && canCreateRecord(collection)
+          && isManagerOrAdmin()
+        || collection == 'history'
+          && validTenant(request.resource.data)
+          && request.resource.data.actorId == request.auth.uid
+          && request.resource.data.assignedTo is string
+          && historyFeatureMatches(request.resource.data)
+          && planAllows(request.resource.data.feature)
+          && canAccessRecord(request.resource.data)
+        || collection in [
+          'leads', 'followups', 'quotations', 'installations', 'payments',
+          'surveys', 'subsidies', 'loans', 'amcs', 'serviceTickets'
+        ]
+          && canCreateRecord(collection);
 
-      allow create, update, delete: if collection == 'inventory' && isManagerOrAdmin();
-      allow create: if collection == 'stockMovements' && canCreateRecord() && isManagerOrAdmin();
+      allow update: if collection == 'catalog'
+          && validTenant(resource.data)
+          && validTenant(request.resource.data)
+          && request.resource.data.tenantId == resource.data.tenantId
+          && isManagerOrAdmin()
+        || collection == 'inventory'
+          && planAllows('inventory')
+          && validTenant(resource.data)
+          && validTenant(request.resource.data)
+          && request.resource.data.tenantId == resource.data.tenantId
+          && isManagerOrAdmin()
+        || collection in [
+          'leads', 'followups', 'quotations', 'installations', 'payments',
+          'surveys', 'subsidies', 'loans', 'amcs', 'serviceTickets'
+        ]
+          && collectionAllowed(collection)
+          && validTenant(resource.data)
+          && validTenant(request.resource.data)
+          && request.resource.data.tenantId == resource.data.tenantId
+          && canAccessRecord(resource.data)
+          && (isManagerOrAdmin() || request.resource.data.assignedTo == request.auth.uid);
 
-      allow create: if (collection in [
-          'leads',
-          'followups',
-          'quotations',
-          'installations',
-          'payments',
-          'surveys',
-          'subsidies',
-          'loans',
-          'amcs',
-          'serviceTickets'
-        ] && canCreateRecord())
-        || (collection == 'history' && canCreateHistory());
-
-      allow update: if collection in [
-        'leads',
-        'followups',
-        'quotations',
-        'installations',
-        'payments',
-        'surveys',
-        'subsidies',
-        'loans',
-        'amcs',
-        'serviceTickets'
-      ] && (
-        isManagerOrAdmin()
-        || (
-          hasActiveProfile()
-          && resource.data.assignedTo == request.auth.uid
-          && request.resource.data.assignedTo == request.auth.uid
-        )
-      );
-
-      allow delete: if collection in [
-        'leads',
-        'followups',
-        'quotations',
-        'installations',
-        'payments',
-        'surveys',
-        'subsidies',
-        'loans',
-        'amcs',
-        'serviceTickets'
-      ] && canAccessRecord(resource.data);
+      allow delete: if collection == 'catalog'
+          && validTenant(resource.data)
+          && isManagerOrAdmin()
+        || collection == 'inventory'
+          && planAllows('inventory')
+          && validTenant(resource.data)
+          && isManagerOrAdmin()
+        || collection in [
+          'leads', 'followups', 'quotations', 'installations', 'payments',
+          'surveys', 'subsidies', 'loans', 'amcs', 'serviceTickets'
+        ]
+          && collectionAllowed(collection)
+          && validTenant(resource.data)
+          && canAccessRecord(resource.data);
     }
   }
 }

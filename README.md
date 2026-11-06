@@ -42,31 +42,48 @@ For a customer demo, open `http://localhost:8000/?demo=1` locally or add `?demo=
 2. Register a **Web app** in Project settings. Copy the configuration (apiKey, authDomain, projectId, appId) to `public/config.js`, removing the comment markers.
 3. In Firebase Console → **Authentication → Sign-in method**, enable **Google** and/or **Email/Password**. Add your production hostname under **Authentication → Settings → Authorized domains**.
 4. In Firebase Console → **Firestore Database**, create a database using **Standard edition**. Choose the database region appropriate for your customers and budget. Do not enable public access.
-5. Create the owner account in Firebase Authentication (or complete Google sign-in once to create it) and copy the owner's **UID**. In Firestore Console, manually create collection `users`, document ID **the exact owner Authentication UID**, with these fields:
+5. Create the owner account in Firebase Authentication and copy the owner's **UID**. Before deploying the new rules, create collection `users`, document ID **the exact owner Authentication UID**, with these fields:
    - `name` (string): `Business Owner`
    - `email` (string): `owner@yourcompany.com` (owner login email)
    - `role` (string): `admin` (Business Manager)
    - `active` (boolean): `true`
-   **Never create user profiles as public documents or enable open write/read rules.** The first admin profile is created directly in Firebase console because client-side rules intentionally prohibit self-promoting to admin.
+   **Never create user profiles as public documents or enable open write/read rules.** This initial admin profile is created directly in Firebase Console because client-side rules intentionally prohibit self-promoting to admin.
 6. Set your company name in `public/config.js` using `window.SOLARCRM_COMPANY_NAME`. The public homepage is the default entry point; team members use **Log in**, and prospects can open **Try live demo** without registering. The pricing page presents the recommended Starter (₹2,999/month; ₹29,990/year, up to 3 users), Business (₹4,999/month; ₹49,990/year, up to 5 users), and Scale (₹8,999/month; ₹89,990/year, up to 15 users) prices. Annual billing is 12 months for the price of 10. Standard one-time onboarding is ₹4,999 for Starter, ₹9,999 for Business, and from ₹19,999 for Scale. The proposed launch offer for the first five customers is Business at ₹3,999/month for the first 12 months plus ₹4,999 onboarding, followed by the stated ₹4,999/month renewal rate. Offer a 14-day assisted trial and state the renewal price before signup. These are launch prices to validate, not market benchmarks; applicable taxes are additional. Review the pricing section for package limits, included Business onboarding, and optional service rates. Optional sales links can be set in `public/config.js`:
    - `window.SOLARCRM_SALES_EMAIL`: email address for sales enquiries.
    - `window.SOLARCRM_WHATSAPP_NUMBER`: WhatsApp number with country code (digits only, for example `919876543210`).
    - `window.SOLARCRM_DEMO_BOOKING_URL`: HTTPS link to your booking calendar.
 
    Leave a link blank until you have a real destination. No customer testimonials are invented. The sample company and customer data are fictional; sample GST and subsidy figures are illustrative, so confirm product-specific tax treatment and current eligibility before sharing a quote.
-7. Use a computer with Node.js, then run from this extracted project directory:
+7. Migrate the current single-company database before deploying the tenant rules. Back up Firestore first. The migration utility assumes all existing top-level CRM data belongs to this one company; do not use it to merge existing multi-company data. Install its dependency, authenticate Google Cloud Application Default Credentials for the Firebase project, then run a dry run and review the counts:
+
+   ```bash
+   npm install
+   gcloud auth application-default login
+   gcloud config set project YOUR-PROJECT-ID
+   npm run migrate:tenant-data -- --tenant-id your-company --company-name "Your Company" --plan business
+   ```
+
+   Once the dry run is correct, apply it:
+
+   ```bash
+   npm run migrate:tenant-data -- --tenant-id your-company --company-name "Your Company" --plan business --apply
+   ```
+
+   The tenant ID becomes the `workspaces/{tenantId}` document ID. The migration adds tenant IDs to user profiles and CRM records, initializes the workspace and active-user count, tags history entries, and copies inventory products to the shared quotation catalog. It stops if it finds documents already assigned to a different tenant.
+   You may use a local service-account JSON file instead of Application Default Credentials with `--service-account C:\secure\path\service-account.json`. Keep that file outside the repository and never commit it.
+   To manage the workspace subscription, create a separate Firebase Authentication account for the Super Admin. After migration, create its `users/{uid}` profile with `name`, `email`, `role: "super_admin"`, `active: true`, and `tenantId` set to this workspace ID. Create this profile only through Firebase Console or a trusted Admin SDK process; CRM users cannot assign the Super Admin role. Like other active profiles, it counts toward the workspace seat total.
+8. Install or use Firebase CLI, select the same project with `firebase use --add`, and deploy the rules and site:
 
    ```bash
    npm install -g firebase-tools
    firebase login
-   firebase use --add
    firebase deploy --only hosting,firestore:rules
    ```
 
-   If the CLI says no project is active, run `firebase use --add` and select your project. You can also use Google Cloud Shell when available.
-8. Open `https://YOUR-PROJECT-ID.web.app`. Sign in with the owner's Google account or email/password. The rules allow a signed-in user to read their own profile; they deny access to CRM records unless that profile is active.
-9. To onboard team members: have each person complete Google sign-in (or create an email/password user in Firebase Authentication), then copy their UID from Firebase Authentication. A Business Manager adds Sales Managers (`manager`) or Sales Persons (`sales`) under **Sales Team**, and Project Managers (`project_manager`) or Project Executives (`project_executive`) under **Project Team**. Sales Managers can add/deactivate Sales Persons; Project Managers can add/deactivate Project Executives. Enter the matching UID, name, email, role, and active status. Don't enable public account registration.
-10. In Firebase Console check Authentication authorized domains for the hosted domain, and monitor usage under Firebase usage & billing.
+   **Do not deploy the new Firestore rules until migration has completed.** The rules deny access to documents without a matching tenant ID and workspace.
+9. Open `https://YOUR-PROJECT-ID.web.app` and sign in. Only the Super Admin sees the **Subscription** navigation item and can open the page or change the workspace plan. Other users are redirected if they attempt to open it directly. The app does not verify payment, so use the plan control only for administrator-managed subscriptions.
+10. To onboard team members: create each login in Firebase Authentication and copy its UID. A Business Manager adds Sales Managers (`manager`) or Sales Persons (`sales`) under **Sales Team**, and Project Managers (`project_manager`) or Project Executives (`project_executive`) under **Project Team**. Sales Managers can add/deactivate Sales Persons; Project Managers can add/deactivate Project Executives. Enter the matching UID, name, email, role, and active status. All active roles count toward the plan's seat limit; downgrades preserve existing users but block new activations until the count is under the limit. Don't enable public account registration.
+11. In Firebase Console check Authentication authorized domains for the hosted domain, and monitor usage under Firebase usage & billing.
 
 **Important:** Register the domain in Firebase Authentication if needed. Do not publish customer data until you have verified staff access using separate test accounts and reviewed the Firestore rules in the Firebase Rules Playground or emulator.
 
@@ -80,9 +97,23 @@ For a customer demo, open `http://localhost:8000/?demo=1` locally or add `?demo=
 | Sales Person (`sales`) | Assigned records only | No team management |
 | Project Executive (`project_executive`) | Assigned records only | No team management |
 
-The security rules only allow Sales Persons and Project Executives to access records with `assignedTo == request.auth.uid`. Business Managers and both manager roles can read all CRM records. User-profile rules enforce that Sales Managers can only manage Sales Person profiles and Project Managers can only manage Project Executive profiles. When a manager reassigns a lead in the portal, the app also updates linked quotation, installation, follow-up, and payment records. This sequence is **not atomic**. For important handovers, verify child record access after reassignment; high-volume deployment should move reassignment to a transaction or trusted server.
+| Plan | Active users | Included CRM features |
+|---|---:|---|
+| Starter | 3 | Leads, follow-ups, quotations and basic surveys/projects; shared product catalog |
+| Business | 5 | Starter plus collections, subsidy tracking and customer loans |
+| Scale | 15 | Business plus inventory/stock movements, after-sales and advanced reports |
 
-The supplied `firestore.rules` allow signed-in users to read their own profile, restrict user-profile reads and changes by team role, and scope member CRM record access to assigned records. A rules file in this repository does not change Firebase Console rules until it is deployed. Deploy with `firebase deploy --only firestore:rules` after creating the initial Business Manager profile; do not replace the rules with public read/write access.
+Every user and CRM record is bound to a tenant workspace. The Firestore rules enforce workspace isolation, plan feature access, role permissions, and transactional seat-count changes. Existing active users remain active after a downgrade; the app and rules prevent additional activations while the workspace is over its new seat limit. The Business Manager selects the subscription tier; no payment integration verifies the subscription. The product catalog is separate from inventory so all tiers can quote products without accessing Scale-only stock records.
+
+The security rules only allow Sales Persons and Project Executives to access records with `assignedTo == request.auth.uid`. Business Managers and both manager roles can read all records in their own tenant. User-profile rules enforce that Sales Managers can only manage Sales Person profiles and Project Managers can only manage Project Executive profiles. When a manager reassigns a lead in the portal, the app also updates linked quotation, installation, follow-up, and payment records. This sequence is **not atomic**. For important handovers, verify child record access after reassignment; high-volume deployment should move reassignment to a transaction or trusted server.
+
+The supplied `firestore.rules` allow signed-in users to read their own profile, restrict user-profile reads and changes by team role, enforce tenant and plan boundaries, and scope member CRM record access to assigned records. A rules file in this repository does not change Firebase Console rules until it is deployed. Complete the documented data migration before deploying these rules; do not replace them with public read/write access.
+
+Run the Firestore security-rule tests locally with Java 21+ and Firebase CLI:
+
+```bash
+firebase emulators:exec --only firestore --project demo-solardesk "npm run test:rules"
+```
 
 **Security caveat:** Client-side and Firestore validation are starter-level. Before production use with sensitive customer records, add schema validation, access audits, dependable backups, and rate limiting. Restrict sign-in to provisioned accounts; Firebase Authentication itself is not a complete CRM user lifecycle management interface.
 
