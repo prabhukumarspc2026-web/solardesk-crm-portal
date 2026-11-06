@@ -43,7 +43,7 @@ For a customer demo, open `http://localhost:8000/?demo=1` locally or add `?demo=
 3. In Firebase Console → **Authentication → Sign-in method**, enable **Google** and/or **Email/Password**. Add your production hostname under **Authentication → Settings → Authorized domains**.
 4. In Firebase Console → **Firestore Database**, create a database using **Standard edition**. Choose the database region appropriate for your customers and budget. Do not enable public access.
 5. Create the owner account in Firebase Authentication and copy the owner's **UID**. Before deploying the new rules, create collection `users`, document ID **the exact owner Authentication UID**, with these fields:
-   - `name` (string): `Business Owner`
+   - `name` (string): `Admin`
    - `email` (string): `owner@yourcompany.com` (owner login email)
    - `role` (string): `admin` (Business Manager)
    - `active` (boolean): `true`
