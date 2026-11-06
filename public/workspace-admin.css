@@ -1,0 +1,15 @@
+.workspace-switcher {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 0 16px 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(201, 219, 238, .24);
+  border-radius: 10px;
+  background: #193550;
+  color: #fff;
+}
+
+.workspace-switcher:focus-visible {
+  outline: 2px solid #6bd2c2;
+  outline-offset: 2px;
+}

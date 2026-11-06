@@ -9,3 +9,5 @@
 .sidebar{scrollbar-color:#c5d4e3 #1b3854}.sidebar::-webkit-scrollbar-thumb{background:#c5d4e3}.sidebar::-webkit-scrollbar-thumb:hover{background:#e7f4ff}
 .subscription-actions{display:flex;align-items:center;margin:12px 0 16px}.subscription-actions .btn{min-width:220px}
 @media(max-width:520px){.subscription-actions .btn{width:100%;min-width:0}}
+.subscription-admin{max-width:1100px}.subscription-admin h2,.subscription-admin h3{margin:0 0 8px;color:#19304a}.subscription-admin>p,.subscription-create>p{color:#71849a;font-size:13px}.subscription-create{margin:22px 0 28px;padding:20px;border:1px solid #e3eaf0;border-radius:12px;background:#f9fbfc}.subscription-create .btn{margin-top:14px}.subscription-list .table{min-width:760px}.subscription-list select{max-width:150px;padding:8px;border:1px solid #dce5ee;border-radius:7px;background:white;color:#294459}.subscription-list td:last-child{white-space:nowrap}.subscription-list .btn{padding:8px 10px}
+@media(max-width:520px){.subscription-create{padding:15px}.subscription-create .form-grid{grid-template-columns:minmax(0,1fr)}.subscription-create .btn{width:100%}}

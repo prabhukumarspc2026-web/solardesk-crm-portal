@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { applicationDefault, cert, initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 
 const options = Object.fromEntries(process.argv.slice(2).map((arg, index, args) => {
   if (!arg.startsWith('--')) return [];
@@ -49,9 +49,17 @@ if (!tenantId || !companyName || !allowedPlans.includes(plan)) {
     for (const collectionName of collections) {
       const snapshot = await firestore.collection(collectionName).get();
       const rows = snapshot.docs.map(document => ({ ref: document.ref, data: document.data() }));
-      const mismatch = rows.find(row => row.data.tenantId && row.data.tenantId !== tenantId);
+      const mismatch = rows.find(row =>
+        row.data.role !== 'super_admin'
+        && row.data.tenantId
+        && row.data.tenantId !== tenantId
+      );
       if (mismatch) throw new Error(`${collectionName}/${mismatch.ref.id} already belongs to a different tenant.`);
-      if (collectionName === 'users') activeUserCount = rows.filter(row => row.data.active === true).length;
+      if (collectionName === 'users') {
+        activeUserCount = rows.filter(row =>
+          row.data.active === true && row.data.role !== 'super_admin'
+        ).length;
+      }
       if (collectionName === 'history') {
         for (const row of rows) {
           if (!historyFeatures[row.data.recordType]) {
@@ -84,14 +92,30 @@ if (!tenantId || !companyName || !allowedPlans.includes(plan)) {
         plan,
         active: true,
         activeUserCount,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        lastSeatChangeUid: FieldValue.delete(),
+        lastSeatChangeAction: FieldValue.delete()
       };
-      await workspaceRef.set(workspace, { merge: true });
+      const directoryRef = firestore.collection('tenantDirectory').doc(tenantId);
+      const directory = {
+        name: companyName,
+        plan,
+        active: true,
+        activeUserCount,
+        updatedAt: workspace.updatedAt
+      };
+      await Promise.all([
+        workspaceRef.set(workspace, { merge: true }),
+        directoryRef.set(directory)
+      ]);
 
       const writes = [];
       for (const [collectionName, rows] of dataByCollection) {
         for (const row of rows) {
           const update = { tenantId };
+          if (collectionName === 'users' && row.data.role === 'super_admin') {
+            update.tenantId = FieldValue.delete();
+          }
           if (collectionName === 'history') update.feature = historyFeatures[row.data.recordType];
           writes.push({ ref: row.ref, data: update, merge: true });
         }

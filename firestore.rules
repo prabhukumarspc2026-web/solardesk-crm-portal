@@ -14,6 +14,7 @@ service cloud.firestore {
       return signedIn()
         && exists(profilePath())
         && get(profilePath()).data.active == true
+        && get(profilePath()).data.role != 'super_admin'
         && get(profilePath()).data.tenantId is string
         && exists(/databases/$(database)/documents/workspaces/$(get(profilePath()).data.tenantId))
         && get(/databases/$(database)/documents/workspaces/$(get(profilePath()).data.tenantId)).data.active == true;
@@ -25,6 +26,14 @@ service cloud.firestore {
 
     function workspacePath(tenant) {
       return /databases/$(database)/documents/workspaces/$(tenant);
+    }
+
+    function seatChangePath(tenant) {
+      return /databases/$(database)/documents/workspaces/$(tenant)/internal/seatChange;
+    }
+
+    function directoryPath(tenant) {
+      return /databases/$(database)/documents/tenantDirectory/$(tenant);
     }
 
     function workspace() {
@@ -40,7 +49,10 @@ service cloud.firestore {
     }
 
     function isSuperAdmin() {
-      return hasActiveProfile() && role() == 'super_admin';
+      return signedIn()
+        && exists(profilePath())
+        && get(profilePath()).data.active == true
+        && role() == 'super_admin';
     }
 
     function isSalesManager() {
@@ -60,7 +72,8 @@ service cloud.firestore {
     }
 
     function planAllows(feature) {
-      return feature in ['leads', 'followups', 'surveys', 'quotations', 'installations']
+      return isSuperAdmin()
+        || feature in ['leads', 'followups', 'surveys', 'quotations', 'installations']
         || (workspace().plan in ['business', 'scale']
           && feature in ['payments', 'subsidies', 'loans'])
         || (workspace().plan == 'scale'
@@ -84,11 +97,16 @@ service cloud.firestore {
     }
 
     function validTenant(data) {
-      return hasActiveProfile() && data.tenantId == currentTenant();
+      return (isSuperAdmin()
+          && data.tenantId is string
+          && exists(workspacePath(data.tenantId)))
+        || (hasActiveProfile() && data.tenantId == currentTenant());
     }
 
     function canAccessRecord(data) {
-      return isManagerOrAdmin() || data.assignedTo == request.auth.uid;
+      return isSuperAdmin()
+        || (hasActiveProfile()
+          && (isManagerOrAdmin() || data.assignedTo == request.auth.uid));
     }
 
     function canManageRole(targetRole) {
@@ -111,6 +129,94 @@ service cloud.firestore {
         && data.tenantId == currentTenant();
     }
 
+    function validNewCompanyAdmin(data) {
+      return isSuperAdmin()
+        && data.keys().hasAll(['name', 'email', 'role', 'active', 'tenantId'])
+        && data.name is string
+        && data.email is string
+        && data.role == 'admin'
+        && data.active == true
+        && data.tenantId is string
+        && !exists(workspacePath(data.tenantId))
+        && existsAfter(workspacePath(data.tenantId))
+        && getAfter(workspacePath(data.tenantId)).data.active == true
+        && getAfter(workspacePath(data.tenantId)).data.activeUserCount == 1
+        && existsAfter(directoryPath(data.tenantId));
+    }
+
+    function validSuperAdminTenantUser(data) {
+      return isSuperAdmin()
+        && data.keys().hasAll(['name', 'email', 'role', 'active', 'tenantId'])
+        && data.name is string
+        && data.email is string
+        && data.role in ['admin', 'manager', 'sales', 'project_manager', 'project_executive']
+        && data.active is bool
+        && data.tenantId is string
+        && exists(workspacePath(data.tenantId));
+    }
+
+    function validNewWorkspace(data, workspaceId) {
+      return isSuperAdmin()
+        && data.keys().hasAll(['name', 'plan', 'active', 'activeUserCount', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'plan', 'active', 'activeUserCount', 'updatedAt'])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 120
+        && data.plan in ['starter', 'business', 'scale']
+        && data.active == true
+        && data.activeUserCount == 1
+        && data.updatedAt is string
+        && existsAfter(directoryPath(workspaceId))
+        && getAfter(directoryPath(workspaceId)).data.name == data.name
+        && getAfter(directoryPath(workspaceId)).data.plan == data.plan
+        && getAfter(directoryPath(workspaceId)).data.active == data.active
+        && getAfter(directoryPath(workspaceId)).data.activeUserCount == data.activeUserCount;
+    }
+
+    function validNewDirectory(data, workspaceId) {
+      let tenantWorkspace = getAfter(workspacePath(workspaceId)).data;
+      return isSuperAdmin()
+        && data.keys().hasAll(['name', 'plan', 'active', 'activeUserCount', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'plan', 'active', 'activeUserCount', 'updatedAt'])
+        && existsAfter(workspacePath(workspaceId))
+        && data.name == tenantWorkspace.name
+        && data.plan == tenantWorkspace.plan
+        && data.active == tenantWorkspace.active
+        && data.activeUserCount == tenantWorkspace.activeUserCount
+        && data.updatedAt is string;
+    }
+
+    function validDirectorySubscriptionUpdate(data, workspaceId) {
+      let tenantWorkspace = getAfter(workspacePath(workspaceId)).data;
+      return isSuperAdmin()
+        && data.diff(resource.data).affectedKeys().hasOnly(['plan', 'active', 'updatedAt'])
+        && data.name == tenantWorkspace.name
+        && data.plan == tenantWorkspace.plan
+        && data.active == tenantWorkspace.active
+        && data.activeUserCount == tenantWorkspace.activeUserCount
+        && data.updatedAt is string;
+    }
+
+    function validDirectorySeatUpdate(data, workspaceId) {
+      let tenantWorkspace = getAfter(workspacePath(workspaceId)).data;
+      return (isSuperAdmin()
+          && data.diff(resource.data).affectedKeys().hasOnly(['activeUserCount', 'updatedAt'])
+          && data.name == tenantWorkspace.name
+          && data.plan == tenantWorkspace.plan
+          && data.active == tenantWorkspace.active
+          && data.activeUserCount == tenantWorkspace.activeUserCount
+          && data.updatedAt is string)
+        || (hasActiveProfile()
+          && currentTenant() == workspaceId
+          && isManagerOrAdmin()
+          && data.diff(resource.data).affectedKeys().hasOnly(['activeUserCount', 'updatedAt'])
+          && data.name == tenantWorkspace.name
+          && data.plan == tenantWorkspace.plan
+          && data.active == tenantWorkspace.active
+          && data.activeUserCount == tenantWorkspace.activeUserCount
+          && data.updatedAt is string);
+    }
+
     function validUserSeatChange() {
       let oldActive = resource.data.active == true;
       let newActive = request.resource.data.active == true;
@@ -130,18 +236,39 @@ service cloud.firestore {
     }
 
     function validWorkspaceSeatUpdate(tenant) {
-      let memberPath = /databases/$(database)/documents/users/$(request.resource.data.lastSeatChangeUid);
+      let seatChange = getAfter(seatChangePath(tenant)).data;
+      let memberPath = /databases/$(database)/documents/users/$(seatChange.userId);
       let wasActive = exists(memberPath) && get(memberPath).data.active == true;
       let isActive = existsAfter(memberPath) && getAfter(memberPath).data.active == true;
       let countChange = isActive && !wasActive ? 1 : (!isActive && wasActive ? -1 : 0);
       let member = getAfter(memberPath).data;
       return request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['activeUserCount', 'lastSeatChangeUid', 'lastSeatChangeAction', 'updatedAt'])
+          .hasOnly(['activeUserCount', 'updatedAt'])
         && request.resource.data.activeUserCount == resource.data.activeUserCount + countChange
+        && getAfter(directoryPath(tenant)).data.activeUserCount == request.resource.data.activeUserCount
         && countChange != 0
+        && seatChange.userId is string
+        && ((seatChange.action == 'activate' && !wasActive && isActive)
+          || (seatChange.action == 'deactivate' && wasActive && !isActive))
         && member.tenantId == tenant
         && canManageRole(member.role)
         && (!isActive || request.resource.data.activeUserCount <= seatLimit(request.resource.data.plan));
+    }
+
+    function validSeatChange(data, tenant) {
+      let memberPath = /databases/$(database)/documents/users/$(data.userId);
+      let wasActive = exists(memberPath) && get(memberPath).data.active == true;
+      let isActive = existsAfter(memberPath) && getAfter(memberPath).data.active == true;
+      let member = getAfter(memberPath).data;
+      return data.keys().hasOnly(['userId', 'action', 'updatedAt'])
+        && data.userId is string
+        && data.action in ['activate', 'deactivate']
+        && data.updatedAt is string
+        && existsAfter(memberPath)
+        && member.tenantId == tenant
+        && canManageRole(member.role)
+        && ((data.action == 'activate' && !wasActive && isActive)
+          || (data.action == 'deactivate' && wasActive && !isActive));
     }
 
     function collectionAllowed(collection) {
@@ -170,21 +297,39 @@ service cloud.firestore {
     }
 
     match /workspaces/{workspaceId} {
-      allow get: if hasActiveProfile() && currentTenant() == workspaceId;
-      allow list: if false;
-      allow create, delete: if false;
-      allow update: if hasActiveProfile()
-        && currentTenant() == workspaceId
-        && (
-          (isSuperAdmin()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plan', 'updatedAt'])
-            && request.resource.data.plan in ['starter', 'business', 'scale'])
-          || (isManagerOrAdmin() && validWorkspaceSeatUpdate(workspaceId))
-        );
+      allow get: if isSuperAdmin()
+        || (hasActiveProfile() && currentTenant() == workspaceId);
+      allow list: if isSuperAdmin();
+      allow create: if validNewWorkspace(request.resource.data, workspaceId);
+      allow delete: if false;
+      allow update: if isSuperAdmin()
+          || (hasActiveProfile()
+          && currentTenant() == workspaceId
+          && isManagerOrAdmin()
+          && validWorkspaceSeatUpdate(workspaceId));
+    }
+
+    match /tenantDirectory/{workspaceId} {
+      allow get, list: if isSuperAdmin();
+      allow create: if validNewDirectory(request.resource.data, workspaceId);
+      allow update: if validDirectorySubscriptionUpdate(request.resource.data, workspaceId)
+        || validDirectorySeatUpdate(request.resource.data, workspaceId);
+      allow delete: if false;
+    }
+
+    match /workspaces/{workspaceId}/internal/{documentId} {
+      allow read, list: if isSuperAdmin();
+      allow create, update: if isSuperAdmin()
+        || (documentId == 'seatChange'
+          && hasActiveProfile()
+          && currentTenant() == workspaceId
+          && isManagerOrAdmin()
+          && validSeatChange(request.resource.data, workspaceId));
+      allow delete: if isSuperAdmin();
     }
 
     match /users/{userId} {
-      allow get: if signedIn() && (
+      allow get: if isSuperAdmin() || signedIn() && (
         request.auth.uid == userId
         || (hasActiveProfile()
           && !exists(/databases/$(database)/documents/users/$(userId))
@@ -196,25 +341,34 @@ service cloud.firestore {
             || (isProjectManager() && resource.data.role in ['manager', 'sales', 'project_executive']))
         )
       );
-      allow list: if hasActiveProfile()
-        && resource.data.tenantId == currentTenant()
-        && (isAdmin()
-          || (isSalesManager() && resource.data.role == 'sales')
-          || (isProjectManager() && resource.data.role in ['manager', 'sales', 'project_executive']));
-      allow create: if validUserProfile(request.resource.data)
-        && canManageRole(request.resource.data.role)
-        && validNewUserSeat();
-      allow update: if validUserProfile(request.resource.data)
-        && resource.data.tenantId == currentTenant()
-        && request.resource.data.tenantId == resource.data.tenantId
-        && canManageRole(resource.data.role)
-        && (isAdmin() || request.resource.data.role == resource.data.role)
-        && validUserSeatChange();
+      allow list: if isSuperAdmin()
+        || (hasActiveProfile()
+          && resource.data.tenantId == currentTenant()
+          && (isAdmin()
+            || (isSalesManager() && resource.data.role == 'sales')
+            || (isProjectManager() && resource.data.role in ['manager', 'sales', 'project_executive'])));
+      allow create: if (isSuperAdmin() && validNewCompanyAdmin(request.resource.data))
+        || (isSuperAdmin() && validSuperAdminTenantUser(request.resource.data))
+        || (!isSuperAdmin()
+          && validUserProfile(request.resource.data)
+          && canManageRole(request.resource.data.role)
+          && validNewUserSeat());
+      allow update: if (isSuperAdmin()
+          && resource.data.role != 'super_admin'
+          && validSuperAdminTenantUser(request.resource.data)
+          && request.resource.data.tenantId == resource.data.tenantId)
+        || (validUserProfile(request.resource.data)
+          && resource.data.tenantId == currentTenant()
+          && request.resource.data.tenantId == resource.data.tenantId
+          && canManageRole(resource.data.role)
+          && (isAdmin() || request.resource.data.role == resource.data.role)
+          && validUserSeatChange());
       allow delete: if false;
     }
 
     match /{collection}/{recordId} {
-      allow read: if collection == 'catalog'
+      allow read: if isSuperAdmin()
+        || collection == 'catalog'
           && validTenant(resource.data)
         || collection == 'inventory'
           && planAllows('inventory')
@@ -232,7 +386,14 @@ service cloud.firestore {
           && validTenant(resource.data)
           && canAccessRecord(resource.data);
 
-      allow create: if collection == 'catalog'
+      allow create: if isSuperAdmin()
+          && collection in [
+            'leads', 'followups', 'quotations', 'installations', 'payments',
+            'surveys', 'subsidies', 'loans', 'inventory', 'catalog',
+            'stockMovements', 'amcs', 'serviceTickets', 'history'
+          ]
+          && validTenant(request.resource.data)
+        || collection == 'catalog'
           && validTenant(request.resource.data)
           && isManagerOrAdmin()
         || collection == 'inventory'
@@ -256,7 +417,15 @@ service cloud.firestore {
         ]
           && canCreateRecord(collection);
 
-      allow update: if collection == 'catalog'
+      allow update: if isSuperAdmin()
+          && collection in [
+            'leads', 'followups', 'quotations', 'installations', 'payments',
+            'surveys', 'subsidies', 'loans', 'inventory', 'catalog',
+            'stockMovements', 'amcs', 'serviceTickets', 'history'
+          ]
+          && validTenant(resource.data)
+          && validTenant(request.resource.data)
+        || collection == 'catalog'
           && validTenant(resource.data)
           && validTenant(request.resource.data)
           && request.resource.data.tenantId == resource.data.tenantId
@@ -278,7 +447,14 @@ service cloud.firestore {
           && canAccessRecord(resource.data)
           && (isManagerOrAdmin() || request.resource.data.assignedTo == request.auth.uid);
 
-      allow delete: if collection == 'catalog'
+      allow delete: if isSuperAdmin()
+          && collection in [
+            'leads', 'followups', 'quotations', 'installations', 'payments',
+            'surveys', 'subsidies', 'loans', 'inventory', 'catalog',
+            'stockMovements', 'amcs', 'serviceTickets', 'history'
+          ]
+          && validTenant(resource.data)
+        || collection == 'catalog'
           && validTenant(resource.data)
           && isManagerOrAdmin()
         || collection == 'inventory'

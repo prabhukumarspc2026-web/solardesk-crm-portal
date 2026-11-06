@@ -34,7 +34,7 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 
 ## Test the demo now
 
-For a customer demo, open `http://localhost:8000/?demo=1` locally or add `?demo=1` to the deployed portal URL. This always uses sample data and skips Firebase sign-in, even when live Firebase is configured. Changes are saved in a separate browser-only demo workspace; use **Reset demo** in the banner to restore the sample data. Use the exit-style icon at the bottom-left to cycle through Business Manager, Sales Manager, Project Manager, Sales Person, and Project Executive views. Do **not** enter real customers' personal information in demo mode.
+For a customer demo, open `http://localhost:8000/?demo=1` locally or add `?demo=1` to the deployed portal URL. To preview global administration with fictional data, open `http://localhost:8000/?demo=1&role=super_admin`. These URLs always use sample data and skip Firebase sign-in, even when live Firebase is configured. Changes are saved in a separate browser-only demo workspace; use **Reset demo** in the banner to restore the sample data. Use the exit-style icon at the bottom-left to cycle through company roles. Do **not** enter real customers' personal information in demo mode.
 
 ## Publish as an ONLINE portal at a free URL
 
@@ -69,9 +69,9 @@ For a customer demo, open `http://localhost:8000/?demo=1` locally or add `?demo=
    npm run migrate:tenant-data -- --tenant-id your-company --company-name "Your Company" --plan business --apply
    ```
 
-   The tenant ID becomes the `workspaces/{tenantId}` document ID. The migration adds tenant IDs to user profiles and CRM records, initializes the workspace and active-user count, tags history entries, and copies inventory products to the shared quotation catalog. It stops if it finds documents already assigned to a different tenant.
+   The tenant ID becomes the `workspaces/{tenantId}` document ID. The migration adds tenant IDs to tenant user profiles and CRM records, initializes the workspace and active-user count, tags history entries, copies inventory products to the shared quotation catalog, removes legacy seat-change user IDs from workspace metadata, and detaches any `super_admin` profile from the company and its seat count. It stops if it finds documents already assigned to a different tenant. This is a one-company legacy migration; do not run it again after creating additional workspaces.
    You may use a local service-account JSON file instead of Application Default Credentials with `--service-account C:\secure\path\service-account.json`. Keep that file outside the repository and never commit it.
-   To manage the workspace subscription, create a separate Firebase Authentication account for the Super Admin. After migration, create its `users/{uid}` profile with `name`, `email`, `role: "super_admin"`, `active: true`, and `tenantId` set to this workspace ID. Create this profile only through Firebase Console or a trusted Admin SDK process; CRM users cannot assign the Super Admin role. Like other active profiles, it counts toward the workspace seat total.
+   After migration, create a separate Firebase Authentication account for the global Super Admin. Create its `users/{uid}` profile with `name`, `email`, `role: "super_admin"`, and `active: true`; do not set `tenantId`. Create this profile only through Firebase Console or a trusted Admin SDK process. Tenant admins cannot assign this role, and the global Super Admin is not counted against any company's user seats. Super Admins can read and manage company metadata and can select a company workspace to access its users and CRM data. Treat this role as fully privileged across every tenant.
 8. Install or use Firebase CLI, select the same project with `firebase use --add`, and deploy the rules and site:
 
    ```bash
@@ -81,7 +81,7 @@ For a customer demo, open `http://localhost:8000/?demo=1` locally or add `?demo=
    ```
 
    **Do not deploy the new Firestore rules until migration has completed.** The rules deny access to documents without a matching tenant ID and workspace.
-9. Open `https://YOUR-PROJECT-ID.web.app` and sign in. Only the Super Admin sees the **Subscription** navigation item and can open the page or change the workspace plan. Other users are redirected if they attempt to open it directly. The app does not verify payment, so use the plan control only for administrator-managed subscriptions.
+9. Open `https://YOUR-PROJECT-ID.web.app` and sign in as the Super Admin. Use the company selector to access a company's dashboard, leads, team, reports, and other CRM records. The **Subscription** page can update each company's plan, suspend/reactivate workspaces, and create an empty workspace. To onboard a company, first create its owner's Firebase Authentication account, then enter the exact UID and account details in the form. The workspace, metadata directory entry, and tenant Admin profile are created together; CRM data is not copied. The app does not verify payment, so use plan controls only for administrator-managed subscriptions.
 10. To onboard team members: create each login in Firebase Authentication and copy its UID. A Business Manager adds Sales Managers (`manager`) or Sales Persons (`sales`) under **Sales Team**, and Project Managers (`project_manager`) or Project Executives (`project_executive`) under **Project Team**. Sales Managers can add/deactivate Sales Persons; Project Managers can add/deactivate Project Executives. Enter the matching UID, name, email, role, and active status. All active roles count toward the plan's seat limit; downgrades preserve existing users but block new activations until the count is under the limit. Don't enable public account registration.
 11. In Firebase Console check Authentication authorized domains for the hosted domain, and monitor usage under Firebase usage & billing.
 
@@ -91,7 +91,8 @@ For a customer demo, open `http://localhost:8000/?demo=1` locally or add `?demo=
 
 | Role | CRM record access | Team access |
 |---|---|---|
-| Business Manager (`admin`) | All records | Manage Sales and Project teams |
+| Super Admin (`super_admin`) | All companies' CRM and user data, one selected workspace at a time | Manage all workspace plans/status, teams, records, and onboarding |
+| Business Manager (`admin`) | All records in their own tenant | Manage Sales and Project teams |
 | Sales Manager (`manager`) | All records | Manage Sales Persons |
 | Project Manager (`project_manager`) | All records | Manage Project Executives |
 | Sales Person (`sales`) | Assigned records only | No team management |
@@ -103,11 +104,11 @@ For a customer demo, open `http://localhost:8000/?demo=1` locally or add `?demo=
 | Business | 5 | Starter plus collections, subsidy tracking and customer loans |
 | Scale | 15 | Business plus inventory/stock movements, after-sales and advanced reports |
 
-Every user and CRM record is bound to a tenant workspace. The Firestore rules enforce workspace isolation, plan feature access, role permissions, and transactional seat-count changes. Existing active users remain active after a downgrade; the app and rules prevent additional activations while the workspace is over its new seat limit. The Business Manager selects the subscription tier; no payment integration verifies the subscription. The product catalog is separate from inventory so all tiers can quote products without accessing Scale-only stock records.
+Every tenant user and CRM record is bound to one tenant workspace. A global Super Admin profile has no `tenantId`; Firestore rules grant it access across all workspaces, tenant users, and CRM collections. The app requires the Super Admin to select a workspace and scopes CRM operations to that company, while allowing every plan feature regardless of the company's tier. Tenant user queries and record rules continue to enforce workspace isolation, plan feature access, role permissions, and transactional seat-count changes for company users. Existing active users remain active after a downgrade; the app and rules prevent additional activations by company users while the workspace is over its new seat limit. The Super Admin can manage company subscription tiers; no payment integration verifies subscriptions. The product catalog is separate from inventory so all tiers can quote products without accessing Scale-only stock records.
 
 The security rules only allow Sales Persons and Project Executives to access records with `assignedTo == request.auth.uid`. Business Managers and both manager roles can read all records in their own tenant. User-profile rules enforce that Sales Managers can only manage Sales Person profiles and Project Managers can only manage Project Executive profiles. When a manager reassigns a lead in the portal, the app also updates linked quotation, installation, follow-up, and payment records. This sequence is **not atomic**. For important handovers, verify child record access after reassignment; high-volume deployment should move reassignment to a transaction or trusted server.
 
-The supplied `firestore.rules` allow signed-in users to read their own profile, restrict user-profile reads and changes by team role, enforce tenant and plan boundaries, and scope member CRM record access to assigned records. A rules file in this repository does not change Firebase Console rules until it is deployed. Complete the documented data migration before deploying these rules; do not replace them with public read/write access.
+The supplied `firestore.rules` allow signed-in users to read their own profile, restrict tenant user-profile reads and changes by team role, enforce tenant and plan boundaries, and scope member CRM record access to assigned records. Global Super Admins can read and manage all company workspaces, tenant user profiles, and CRM collections; this role must only be granted to a trusted administrator. Regular company users remain restricted to their tenant and role. Workspace documents contain tenant operational metadata; seat-change user IDs are stored in a tenant-only internal document. The `tenantDirectory` contains approved company metadata used by global subscription management. A rules file in this repository does not change Firebase Console rules until it is deployed. Complete the documented data migration before deploying these rules; do not replace them with public read/write access.
 
 Run the Firestore security-rule tests locally with Java 21+ and Firebase CLI:
 
@@ -115,7 +116,7 @@ Run the Firestore security-rule tests locally with Java 21+ and Firebase CLI:
 firebase emulators:exec --only firestore --project demo-solardesk "npm run test:rules"
 ```
 
-**Security caveat:** Client-side and Firestore validation are starter-level. Before production use with sensitive customer records, add schema validation, access audits, dependable backups, and rate limiting. Restrict sign-in to provisioned accounts; Firebase Authentication itself is not a complete CRM user lifecycle management interface.
+**Security caveat:** Client-side and Firestore validation are starter-level. The Super Admin can access every tenant, so provision that role only to trusted administrators, use strong credentials, and enable multi-factor authentication where available. Before production use with sensitive customer records, add schema validation, access audits, dependable backups, and rate limiting. Restrict sign-in to provisioned accounts; Firebase Authentication itself is not a complete CRM user lifecycle management interface.
 
 ## Free-plan conditions
 
