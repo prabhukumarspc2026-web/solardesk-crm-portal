@@ -21,6 +21,7 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 - Shared inventory catalog with low-stock thresholds and stock receipt/issue movements linked to projects. Firebase stock movements use a transaction to prevent issuing more than available stock.
 - Collections with milestone amounts and a printable GST invoice template. Verify statutory invoice fields and tax treatment with your accountant before issuing.
 - After-sales AMC renewals and service-ticket tracking for inverter, panel, wiring and net-meter issues.
+ - Completing a project automatically creates one linked Active AMC, with duplicate protection on repeated saves.
 - Sales-source, pipeline-conversion and collections reports with CSV export.
 - Dashboard indicators for due follow-ups, stuck subsidy applications, AMC renewals, surveys and open service tickets.
 - Separate Sales Team and Project Team directories. Business Owners manage both; Sales Managers manage Sales Executives; Project Managers manage Project Executives. Team managers can add or deactivate members only in their own team.

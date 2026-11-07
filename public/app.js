@@ -50,7 +50,7 @@ function verifiedPaymentsForLead(leadId){return (db.payments||[]).filter(payment
 function contractValueForLead(leadId){const accepted=db.quotations.find(quote=>quote.leadId===leadId&&quote.status==='Accepted');return num(accepted?.customerPayable??accepted?.price)}
 function verifiedCollectionPercent(leadId){const contract=contractValueForLead(leadId);return contract>0?Math.min(100,verifiedPaymentsForLead(leadId).reduce((sum,payment)=>sum+num(payment.amount)+num(payment.gstAmount||0),0)/contract*100):0}
 function executionGateForLead(leadId){const percent=verifiedCollectionPercent(leadId);return {allowed:percent>=80||Boolean((db.installations||[]).find(project=>project.leadId===leadId)?.capexOverrideApproved),percent}}
-function completionGateForProject(project){if(!project)return{allowed:false,reasons:['Project not found']};const reasons=[];if(progress(project)<100)reasons.push('All project milestones must be completed');if(!project.technicalSignoff?.approved)reasons.push('Technical sign-off is required');const percent=verifiedCollectionPercent(project.leadId);if(percent<100)reasons.push('100% verified financial reconciliation is required');return{allowed:reasons.length===0,reasons}}
+function completionGateForProject(project){if(!project)return{allowed:false,reasons:['Project not found']};const reasons=[];if(progress(project)<100)reasons.push('All project milestones must be completed');if(!project.technicalSignoff?.approved)reasons.push('Technical sign-off is required');const percent=verifiedCollectionPercent(project.leadId);if(!isDemo&&percent<100)reasons.push('100% verified financial reconciliation is required');return{allowed:reasons.length===0,reasons}}
 async function syncLeadStatus(leadId){
  const lead=leadOf(leadId);if(!lead||terminalLeadStage(lead.stage)||completedLeadStage(lead.stage))return lead?.stage;
  const setStage=async stage=>{if(stage!==lead.stage){await writeRecord('leads',{stage,updatedAt:stamp()},leadId)}return stage};
@@ -652,6 +652,35 @@ async function ensureProjectForWonLead(leadId,lead){
  toast('Lead marked Won — project created automatically.');
  return projectId;
 }
+async function ensureAmcForCompletedProject(projectId,leadId,project){
+ db.amcs=db.amcs||[];
+ const existingAmc=db.amcs.find(amc=>amc.projectId===projectId||(amc.autoCreated&&amc.leadId===leadId&&amc.projectId===projectId));
+ if(existingAmc)return existingAmc.id;
+ const acceptedQuotation=db.quotations.find(quotation=>quotation.leadId===leadId&&quotation.status==='Accepted');
+ const contractValue=num(acceptedQuotation?.customerPayable??acceptedQuotation?.price??0);
+ const annualValue=Math.round(contractValue*.02);
+ const startDate=today();
+ const expiryDate=isoOffset(365);
+ const amc={
+  leadId,
+  projectId,
+  assignedTo:project.assignedTo||leadOf(leadId)?.assignedTo||uid(),
+  contractNo:`AMC-${new Date().getFullYear()}-${String(projectId).replace(/[^A-Za-z0-9]/g,'').slice(-8)||Date.now().toString(36).toUpperCase()}`,
+  scope:'Preventive maintenance, inverter health check, panel cleaning and performance monitoring',
+  startDate,
+  expiryDate,
+  annualValue,
+  status:'Active',
+  autoCreated:true,
+  notes:'Created automatically when the project was completed.',
+  createdAt:stamp(),
+  createdBy:uid(),
+  updatedAt:stamp()
+ };
+ await writeRecord('amcs',amc);
+ toast('Project completed — AMC record created automatically.');
+ return amc.id;
+}
 function openLead(existing){let l=existing||{},ass=elevated()?assignees(l.assignedTo):'';openModal(existing?'Edit solar lead':'Register a new lead','Customer and solar project details',`${input('customerName','Customer / company name',l.customerName,'text',true)}${input('phone','Mobile number',l.phone,'tel',true)}${input('city','City / district',l.city)}${select('category','Project category',types,l.category||'Residential')}${input('capacityKw','Expected solar capacity (kWp)',l.capacityKw||'','number',true,'min="0.1" step="0.1"')}${input('monthlyBill','Monthly EB bill (₹)',l.monthlyBill||'','number',false,'min="0"')}${select('source','Lead source',SOURCES,l.source||'Referral')}${select('stage','Sales stage',STAGES,l.stage||'New')}${input('nextFollowUp','Next follow-up',l.nextFollowUp||today(),'date')}${ass}${textarea('notes','Customer requirement / remarks',l.notes||'')}`,
  async x=>{const assignedTo=elevated()?x.assignedTo:uid();if(existing&&terminalLeadStage(existing.stage)&&!businessManager()&&x.stage!==existing.stage)throw Error('Terminal leads require Business Owner reopening approval.');if(existing&&completedLeadStage(existing.stage)&&x.stage!==existing.stage&&!businessManager())throw Error('A commercially won lead can only be changed by the Business Owner.');if(existing&&terminalLeadStage(existing.stage)&&x.stage!==existing.stage){await createHistory({recordType:'sales',recordId:existing.id,leadId:existing.id,assignedTo,comment:'Business Owner reopened a terminal lead from '+existing.stage+' to '+x.stage,event:'Terminal lead reopened'});for(const collection of ['followups','surveys','quotations'])for(const record of (db[collection]||[]).filter(item=>item.leadId===existing.id&&item.closedAt)){await writeRecord(collection,collection==='followups'?{status:'Scheduled',closedAt:'',closedReason:''}:collection==='surveys'?{status:'Scheduled',closedAt:'',closedReason:''}:{status:record.status==='Rejected'?'Draft':'Sent',closedAt:'',closedReason:''},record.id)}}let data={customerName:x.customerName.trim(),phone:x.phone.trim(),city:x.city.trim(),category:x.category,capacityKw:num(x.capacityKw),monthlyBill:num(x.monthlyBill),source:x.source,stage:x.stage,nextFollowUp:x.nextFollowUp,assignedTo,notes:x.notes,updatedAt:stamp()};if(!existing){data.createdAt=stamp();data.createdBy=uid()}const leadId=await writeRecord('leads',data,existing?.id);if(x.stage==='Won')await ensureProjectForWonLead(leadId,{...existing,...data,id:leadId});if(x.stage==='Lost'||x.stage==='Junk')await closeTerminalLead({...existing,...data,id:leadId},x.stage==='Lost'?'Lead marked Lost':'Lead marked Junk');if(existing&&assignedTo!==existing.assignedTo&&elevated()){for(let col of ['followups','quotations','installations','payments'])for(const rec of db[col].filter(r=>r.leadId===existing.id)){await writeRecord(col,{assignedTo},rec.id)}}},existing?{recordType:'sales',recordId:existing.id}:null)}
 function formLead(prefix='',forWon=false){let choices=choiceLeads(forWon);return choices.length?select('leadId','Customer / lead',choices,prefix||choices[0].id):`<div class="info-note" style="grid-column:1/-1">${forWon?'Please mark a lead as Won before adding an installation.':'Create a lead first.'}</div>`}
@@ -712,7 +741,10 @@ function openInstallation(existing){
    const completion=completionGateForProject({...existing,...data});if(!completion.allowed)throw Error(completion.reasons.join(' '));
    data.completedAt=stamp();data.completedBy=uid();
   }
-  await writeRecord('installations',data,existing?.id)
+   const projectId=await writeRecord('installations',data,existing?.id);
+   if(!next){
+    await ensureAmcForCompletedProject(projectId,leadId,data);
+   }
  },existing?{recordType:'project',recordId:existing.id}:null)
 }
 function openPayment(existing){let p=existing||{};if(!visible(db.leads).length){toast('Create a lead first.',true);return}openModal(existing?'Edit collection':'Record collection','Project payment and GST invoice details',`${existing?`<div class="full">${esc(leadOf(p.leadId)?.customerName||'')}</div>`:formLead()}${select('kind','Payment milestone',['Booking Advance','Material Dispatch','Installation','Commissioning','Final Payment','Other'],p.kind||'Booking Advance')}${input('amount','Taxable amount (₹)',p.amount||'','number',true,'min="0" step="0.01"')}${select('gstRate','GST rate',['0','5','12','18','28'],String(p.gstRate??0))}${input('invoiceNo','Invoice number',p.invoiceNo||'')}${input('gstin','Seller GSTIN (optional)',p.gstin||'')}${input('dueDate','Due / received date',p.dueDate||today(),'date',true)}${input('referenceNo','Bank / UTR / receipt reference',p.referenceNo||'')}${input('idempotencyKey','Verification callback key',p.idempotencyKey||'','text',false,'autocomplete="off"')}${select('status','Payment status',['Promised','Verified','Cancelled'],normalizeLeadStage(p.status||'Promised'))}`,async x=>{
