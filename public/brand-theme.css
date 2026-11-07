@@ -88,6 +88,18 @@ body{background:var(--canvas);color:var(--ink)}
 @media(max-width:720px){
   .sidebar{background:var(--brand-navy-deep)}
 }
+.demo-topbar-call{
+  min-height:33px;
+  padding:7px 11px;
+  border:1px solid #b9dcd6;
+  border-radius:8px;
+  background:#f3fbf9;
+  font-size:11px;
+  line-height:1;
+}
+.demo-topbar-call:hover{
+  background:#eaf8f1;
+}
 @media(max-width:520px){
   .top-profile-name,.top-profile-chevron{display:none}
   .topbar-right{gap:10px}

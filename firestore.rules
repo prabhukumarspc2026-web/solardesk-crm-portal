@@ -91,6 +91,7 @@ service cloud.firestore {
       return collection == 'leads' ? 'leads'
         : collection == 'followups' ? 'followups'
         : collection == 'quotations' ? 'quotations'
+        : collection == 'salesOrders' ? 'installations'
         : collection == 'installations' ? 'installations'
         : collection == 'surveys' ? 'surveys'
         : collection == 'payments' ? 'payments'
@@ -387,7 +388,7 @@ service cloud.firestore {
           && planAllows(resource.data.feature)
           && canAccessRecord(resource.data)
         || collection in [
-          'leads', 'followups', 'quotations', 'installations', 'payments',
+          'leads', 'followups', 'quotations', 'salesOrders', 'installations', 'payments',
           'surveys', 'subsidies', 'loans', 'stockMovements', 'amcs', 'serviceTickets'
         ]
           && collectionAllowed(collection)
@@ -396,7 +397,7 @@ service cloud.firestore {
 
       allow create: if isSuperAdmin()
           && collection in [
-            'leads', 'followups', 'quotations', 'installations', 'payments',
+            'leads', 'followups', 'quotations', 'salesOrders', 'installations', 'payments',
             'surveys', 'subsidies', 'loans', 'inventory', 'catalog',
             'stockMovements', 'amcs', 'serviceTickets', 'history'
           ]
@@ -420,14 +421,14 @@ service cloud.firestore {
           && planAllows(request.resource.data.feature)
           && canAccessRecord(request.resource.data)
         || collection in [
-          'leads', 'followups', 'quotations', 'installations', 'payments',
+          'leads', 'followups', 'quotations', 'salesOrders', 'installations', 'payments',
           'surveys', 'subsidies', 'loans', 'amcs', 'serviceTickets'
         ]
           && canCreateRecord(collection);
 
       allow update: if isSuperAdmin()
           && collection in [
-            'leads', 'followups', 'quotations', 'installations', 'payments',
+            'leads', 'followups', 'quotations', 'salesOrders', 'installations', 'payments',
             'surveys', 'subsidies', 'loans', 'inventory', 'catalog',
             'stockMovements', 'amcs', 'serviceTickets', 'history'
           ]
@@ -445,7 +446,7 @@ service cloud.firestore {
           && request.resource.data.tenantId == resource.data.tenantId
           && isManagerOrAdmin()
         || collection in [
-          'leads', 'followups', 'quotations', 'installations', 'payments',
+          'leads', 'followups', 'quotations', 'salesOrders', 'installations', 'payments',
           'surveys', 'subsidies', 'loans', 'amcs', 'serviceTickets'
         ]
           && collectionAllowed(collection)
