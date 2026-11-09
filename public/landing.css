@@ -63,12 +63,23 @@
 .public-pricing .public-section-heading{margin-bottom:30px}
 .launch-offer{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(250px,.8fr) auto;align-items:center;gap:24px;max-width:1120px;margin:0 auto 25px;padding:24px 27px;border:1px solid #d5eae4;border-radius:15px;background:linear-gradient(110deg,#edf8f4,#f6faf8 70%,#fff)}
 .launch-badge,.recommended-badge{display:inline-flex;align-items:center;border-radius:20px;padding:6px 9px;background:#dff3ea;color:#177a68;font-size:9px;font-weight:800;letter-spacing:.8px}
+.launch-badges{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.trial-badge{display:inline-flex;align-items:center;border:1px solid #08786d;border-radius:20px;padding:7px 11px;background:#08786d;box-shadow:0 3px 10px #08786d30;color:#fff;font-size:10px;font-weight:900;letter-spacing:.8px}
 .launch-offer h3{margin:11px 0 5px;color:#153355;font-size:17px}
 .launch-offer>div:first-child>p{max-width:500px;margin:0;color:#6b7e90;font-size:11px;line-height:1.6}
-.launch-price{display:flex;flex-direction:column;gap:3px}
-.launch-price strong{color:#102b56;font-family:Manrope,sans-serif;font-size:30px;letter-spacing:-1px}
-.launch-price>span{color:#466078;font-size:11px;font-weight:700}
-.launch-price small{margin-top:5px;color:#718397;font-size:10px;line-height:1.5}
+.launch-offer>div:first-child>.trial-highlight{margin-top:9px;padding:10px 12px;border-left:3px solid #08786d;border-radius:0 8px 8px 0;background:#e4f5ef;color:#245b55;font-size:12px;line-height:1.6}
+.trial-highlight strong{color:#075e56;font-size:13px}
+.launch-price{display:flex;flex-direction:column;gap:9px}
+.launch-rate{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.launch-rate strong{color:#102b56;font-family:Manrope,sans-serif;font-size:30px;letter-spacing:-1px}
+.launch-rate>span{color:#466078;font-size:11px;font-weight:700}
+.launch-breakdown{display:grid;gap:6px;padding:10px 12px;border:1px solid #dcebe6;border-radius:9px;background:#ffffffc9}
+.launch-breakdown p{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;color:#526b81;font-size:10px;line-height:1.4}
+.launch-breakdown p strong{flex:none;color:#183957;font-size:11px}
+.launch-breakdown .launch-due{margin:2px -5px;padding:7px 5px;border-radius:6px;background:#e4f5ef;color:#075e56;font-weight:800}
+.launch-breakdown .launch-due strong{color:#075e56;font-size:13px}
+.launch-breakdown p small{color:#718397;font-size:9px;font-weight:400}
+.launch-renewal{color:#718397;font-size:10px;line-height:1.5}
 .pricing-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch;gap:16px;max-width:1120px;margin:auto}
 .pricing-card{position:relative;display:flex;flex-direction:column;padding:23px;border:1px solid #e3eaf0;border-radius:13px;background:#fff}
 .pricing-card.pricing-featured{border:2px solid #168b83;box-shadow:0 8px 26px #148d7b16}
@@ -78,7 +89,6 @@
 .plan-price{display:flex;align-items:baseline;gap:6px}
 .plan-price strong{color:#102b56;font-family:Manrope,sans-serif;font-size:31px;letter-spacing:-1.3px}
 .plan-price>span{color:#78899a;font-size:10px}
-.trial-note{align-self:flex-start;margin:5px 0 0;padding:4px 8px;border-radius:20px;background:#e8f7f1;color:#177a68;font-size:9px;font-weight:800}
 .annual-price{display:flex;flex-direction:column;gap:3px;min-height:34px;margin:3px 0 15px;color:#304d67;font-size:11px;font-weight:800}
 .annual-price span{color:#8794a2;font-size:9px;font-weight:500}
 .pricing-limit{padding:10px 0;border-top:1px solid #edf0f3;border-bottom:1px solid #edf0f3;color:#526b81;font-size:11px}
