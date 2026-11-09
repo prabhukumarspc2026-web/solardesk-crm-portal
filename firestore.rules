@@ -263,6 +263,19 @@ service cloud.firestore {
         && (!isActive || request.resource.data.activeUserCount <= seatLimit(request.resource.data.plan));
     }
 
+    function validWorkspaceQuotationLogoUpdate(workspaceId) {
+      let logo = request.resource.data.quotationLogo;
+      return isAdmin()
+        && currentTenant() == workspaceId
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['quotationLogo', 'updatedAt'])
+        && request.resource.data.updatedAt is string
+        && logo is string
+        && logo.size() <= 250000
+        && (logo == ''
+          || logo.matches('^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$'));
+    }
+
     function validSeatChange(data, tenant) {
       let memberPath = /databases/$(database)/documents/users/$(data.userId);
       let wasActive = exists(memberPath) && get(memberPath).data.active == true;
@@ -314,7 +327,8 @@ service cloud.firestore {
           || (hasActiveProfile()
           && currentTenant() == workspaceId
           && isManagerOrAdmin()
-          && validWorkspaceSeatUpdate(workspaceId));
+          && validWorkspaceSeatUpdate(workspaceId))
+        || validWorkspaceQuotationLogoUpdate(workspaceId);
     }
 
     match /tenantDirectory/{workspaceId} {

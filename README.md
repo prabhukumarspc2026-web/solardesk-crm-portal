@@ -6,7 +6,7 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 
 - Public sales homepage for solar EPC and installation teams, with no-registration demo access and a separate team sign-in. Optional sales email, WhatsApp and 20-minute booking links appear on the homepage and demo when configured.
 - Public pricing page with proposed Starter, Business and Scale plans, annual rates, plan limits, onboarding details, add-on rates, and the five-customer Business launch offer. These are recommendations to validate, not competitor benchmarks; applicable taxes are additional.
-- The sample workspace uses a clearly fictional company name and an illustrative, non-zero GST quotation. Confirm actual product-specific tax and subsidy settings before sharing or issuing quotations. No customer testimonials are invented.
+- The sample workspace uses a clearly fictional company name and illustrative quotation figures with an 8.9% GST default. Verify applicable GST treatment and subsidy settings before issuing quotations. No customer testimonials are invented.
 - Owner/manager overview with sales pipeline, due follow-ups, deal value, and salesperson performance.
 - Salespeople can see **only leads and records assigned to them**, enforced by Cloud Firestore Security Rules (not merely by hiding buttons).
 - Lead entry: customer/mobile/city, category, solar capacity in kWp, monthly EB bill, source, pipeline stage, due follow-up and notes.
@@ -14,7 +14,7 @@ A responsive, ready-to-deploy solar sales web app built for 10+ salespeople. **N
 - Mobile-ready site-survey records for roof area, shading, DISCOM connection, technician notes and photo URLs.
 - Read-only audit history for leads, quotations, follow-ups, collections and installations: normal record creation records saved fields, and each changed field is retained with its previous and updated value, actor and timestamp. Bulk-imported leads receive one "Record imported" event to keep writes bounded; subsequent edits use normal field-level history. Open a record's Edit/Update details to view its timeline and append comments; history entries cannot be edited or deleted and follow Firestore record permissions.
 - Follow-up schedule, notes, completed/pending status, overdue flags.
-- Catalog-based solar quotations with product/GST defaults, taxable value, CGST/SGST calculation, PM Surya Ghar central subsidy estimate, manually entered state subsidy and customer net amount. Browser print can save quotations as PDF. Subsidy estimates must be checked against current scheme eligibility and state rules.
+- Catalog-based solar quotations with a single 8.9% GST rate, taxable value, CGST/SGST calculation, PM Surya Ghar central subsidy estimate, manually entered state subsidy and customer net amount. New quotations use the reference PDF's 30-day validity, payment schedule, customer scope, exclusions and warranty terms by default; these remain editable per quote. Business Owners can upload a PNG, JPEG or WebP logo on the Quotations page; it is saved to that tenant's workspace and included on printed proposals. Subsidy and tax treatment must be checked against current scheme and statutory rules before issuing.
 - Ten-step project checklist from material procurement through DISCOM inspection, net-meter installation, subsidy disbursement and handover.
 - PM Surya Ghar application tracker with status/date tracking and dashboard alerts for applications open over 45 days.
 - Customer loan status tracking from application through sanction and disbursement.

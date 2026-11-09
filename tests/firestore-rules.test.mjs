@@ -329,6 +329,30 @@ test('enforces tenant boundaries, plan features, and seat caps', async () => {
 
 });
 
+test('allows only a tenant Business Owner to manage the quotation logo', async () => {
+  const ownerDb = testEnv.authenticatedContext('owner-a').firestore();
+  const managerDb = testEnv.authenticatedContext('sales-manager-a').firestore();
+  const otherOwnerDb = testEnv.authenticatedContext('owner-b').firestore();
+  const workspace = doc(ownerDb, 'workspaces/tenant-a');
+  const updatedAt = new Date().toISOString();
+
+  await assertSucceeds(updateDoc(workspace, {
+    quotationLogo: 'data:image/png;base64,AA==', updatedAt
+  }));
+  assert.equal((await getDoc(workspace)).data().quotationLogo,
+    'data:image/png;base64,AA==');
+  await assertSucceeds(updateDoc(workspace, { quotationLogo: '', updatedAt }));
+  await assertFails(updateDoc(workspace, {
+    quotationLogo: 'data:image/svg+xml;base64,AA==', updatedAt
+  }));
+  await assertFails(updateDoc(doc(managerDb, 'workspaces/tenant-a'), {
+    quotationLogo: 'data:image/png;base64,AA==', updatedAt
+  }));
+  await assertFails(updateDoc(doc(otherOwnerDb, 'workspaces/tenant-a'), {
+    quotationLogo: 'data:image/png;base64,AA==', updatedAt
+  }));
+});
+
 test('applies the canonical team-role permissions and accepts legacy profile aliases', async () => {
   const salesManagerDb = testEnv.authenticatedContext('sales-manager-a').firestore();
   const salesExecutiveDb = testEnv.authenticatedContext('sales-executive-a').firestore();
