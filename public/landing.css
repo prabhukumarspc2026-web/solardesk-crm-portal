@@ -78,6 +78,7 @@
 .plan-price{display:flex;align-items:baseline;gap:6px}
 .plan-price strong{color:#102b56;font-family:Manrope,sans-serif;font-size:31px;letter-spacing:-1.3px}
 .plan-price>span{color:#78899a;font-size:10px}
+.trial-note{align-self:flex-start;margin:5px 0 0;padding:4px 8px;border-radius:20px;background:#e8f7f1;color:#177a68;font-size:9px;font-weight:800}
 .annual-price{display:flex;flex-direction:column;gap:3px;min-height:34px;margin:3px 0 15px;color:#304d67;font-size:11px;font-weight:800}
 .annual-price span{color:#8794a2;font-size:9px;font-weight:500}
 .pricing-limit{padding:10px 0;border-top:1px solid #edf0f3;border-bottom:1px solid #edf0f3;color:#526b81;font-size:11px}
