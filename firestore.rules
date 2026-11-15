@@ -91,6 +91,7 @@ service cloud.firestore {
       return collection == 'leads' ? 'leads'
         : collection == 'followups' ? 'followups'
         : collection == 'quotations' ? 'quotations'
+        : collection in ['invoices', 'creditNotes', 'paymentMilestones', 'paymentReceipts', 'paymentReminders'] ? 'payments'
         : collection == 'salesOrders' ? 'installations'
         : collection == 'installations' ? 'installations'
         : collection == 'surveys' ? 'surveys'
@@ -292,8 +293,29 @@ service cloud.firestore {
           || (data.action == 'deactivate' && wasActive && !isActive));
     }
 
+    function validInvoiceSequenceIssue(data) {
+      let sequencePath = /databases/$(database)/documents/invoiceSequences/$(data.tenantId)/years/$(data.financialYear);
+      return data.financialYear is string
+        && data.sequence is int
+        && existsAfter(sequencePath)
+        && getAfter(sequencePath).data.tenantId == data.tenantId
+        && getAfter(sequencePath).data.financialYear == data.financialYear
+        && getAfter(sequencePath).data.value == data.sequence
+        && ((!exists(sequencePath) && data.sequence == 1)
+          || (exists(sequencePath)
+            && get(sequencePath).data.value + 1 == data.sequence));
+    }
+
     function collectionAllowed(collection) {
       return collection == 'catalog' || planAllows(featureForCollection(collection));
+    }
+
+    function financeRecordAccess(data) {
+      return planAllows('payments') && validTenant(data) && canAccessRecord(data);
+    }
+
+    function financeManager() {
+      return isSuperAdmin() || isAdmin() || isSalesManager();
     }
 
     function canCreateRecord(collection) {
@@ -309,6 +331,8 @@ service cloud.firestore {
         || (data.recordType == 'quotation' && data.feature == 'quotations')
         || (data.recordType == 'followup' && data.feature == 'followups')
         || (data.recordType == 'collection' && data.feature == 'payments')
+        || (data.recordType in ['invoice', 'creditNote', 'paymentMilestone', 'paymentReceipt', 'paymentReminder']
+          && data.feature == 'payments')
         || (data.recordType == 'project' && data.feature == 'installations')
         || (data.recordType == 'survey' && data.feature == 'surveys')
         || (data.recordType == 'subsidy' && data.feature == 'subsidies')
@@ -389,6 +413,156 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /invoiceSettings/{workspaceId} {
+      allow get: if isSuperAdmin()
+        || workspaceId == currentTenant()
+          && (financeManager() || hasActiveProfile() && isProjectManager());
+      allow list: if false;
+      allow create: if financeManager()
+        && workspaceId == request.resource.data.tenantId
+        && (isSuperAdmin() || workspaceId == currentTenant())
+        && request.resource.data.invoicePrefix is string
+        && request.resource.data.invoicePrefix.size() > 0
+        && request.resource.data.invoicePrefix.size() <= 20
+        && request.resource.data.taxMode in ['split', 'igst'];
+      allow update: if financeManager()
+        && workspaceId == resource.data.tenantId
+        && request.resource.data.tenantId == resource.data.tenantId
+        && (isSuperAdmin() || workspaceId == currentTenant())
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'invoicePrefix', 'taxMode', 'gstin', 'address', 'state', 'bankName',
+          'bankAccount', 'ifsc', 'paymentTerms', 'reminderOffsets', 'reminderTemplate', 'milestones',
+          'updatedAt', 'updatedBy'
+        ])
+        && request.resource.data.invoicePrefix is string
+        && request.resource.data.invoicePrefix.size() > 0
+        && request.resource.data.invoicePrefix.size() <= 20
+        && request.resource.data.taxMode in ['split', 'igst'];
+      allow delete: if false;
+    }
+
+    match /invoiceSequences/{tenantId}/years/{financialYear} {
+      allow get: if isSuperAdmin()
+        || hasActiveProfile() && tenantId == currentTenant();
+      allow list: if false;
+      allow create: if financeManager()
+        && validTenant(request.resource.data)
+        && (isSuperAdmin() || tenantId == currentTenant())
+        && request.resource.data.tenantId == tenantId
+        && request.resource.data.financialYear == financialYear
+        && request.resource.data.value == 1;
+      allow update: if financeManager()
+        && validTenant(resource.data)
+        && validTenant(request.resource.data)
+        && tenantId == resource.data.tenantId
+        && request.resource.data.tenantId == resource.data.tenantId
+        && financialYear == resource.data.financialYear
+        && request.resource.data.financialYear == resource.data.financialYear
+        && request.resource.data.value == resource.data.value + 1
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['value', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /invoices/{invoiceId} {
+      allow read: if financeRecordAccess(resource.data);
+      allow create: if financeManager()
+        && collectionAllowed('invoices')
+        && validTenant(request.resource.data)
+        && (isSuperAdmin() || request.resource.data.tenantId == currentTenant())
+        && request.resource.data.status == 'Draft'
+        && request.resource.data.invoiceNo == ''
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if (financeRecordAccess(resource.data)
+          && financeRecordAccess(request.resource.data)
+          && request.resource.data.tenantId == resource.data.tenantId
+          && financeManager()
+          && (
+            resource.data.status == 'Draft'
+              && request.resource.data.status == 'Draft'
+              && request.resource.data.invoiceNo == resource.data.invoiceNo
+              && request.resource.data.createdAt == resource.data.createdAt
+              && request.resource.data.createdBy == resource.data.createdBy
+            || resource.data.status == 'Draft'
+              && request.resource.data.status == 'Issued'
+              && request.resource.data.invoiceNo is string
+              && request.resource.data.invoiceNo.size() > 0
+              && validInvoiceSequenceIssue(request.resource.data)
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['status', 'invoiceNo', 'financialYear', 'sequence', 'issuedAt', 'issuedBy', 'updatedAt'])
+            || resource.data.status == 'Draft'
+              && request.resource.data.status == 'Cancelled'
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['status', 'cancelledAt', 'cancelledBy', 'updatedAt'])
+          );
+      allow delete: if false;
+    }
+
+    match /payments/{paymentId} {
+      allow read: if financeRecordAccess(resource.data);
+      allow create: if collectionAllowed('payments')
+        && validTenant(request.resource.data)
+        && (financeManager()
+          || hasActiveProfile() && isProjectManager()
+            && request.resource.data.status == 'Promised'
+          || request.resource.data.assignedTo == request.auth.uid
+            && request.resource.data.createdBy == request.auth.uid
+            && request.resource.data.status == 'Promised');
+      allow update: if financeRecordAccess(resource.data)
+        && financeRecordAccess(request.resource.data)
+        && request.resource.data.tenantId == resource.data.tenantId
+        && (financeManager()
+          || hasActiveProfile() && isProjectManager()
+            && resource.data.status == 'Promised'
+            && request.resource.data.status == 'Promised')
+        && (
+          resource.data.status == 'Promised'
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['receiptId', 'updatedAt'])
+        );
+      allow delete: if false;
+    }
+
+    match /creditNotes/{noteId} {
+      allow read: if financeRecordAccess(resource.data);
+      allow create: if collectionAllowed('creditNotes')
+        && validTenant(request.resource.data)
+        && financeManager()
+        && (isSuperAdmin() || request.resource.data.tenantId == currentTenant())
+        && request.resource.data.status == 'Issued'
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /paymentMilestones/{milestoneId} {
+      allow read: if financeRecordAccess(resource.data);
+      allow create: if collectionAllowed('paymentMilestones')
+        && validTenant(request.resource.data)
+        && (financeManager()
+          || hasActiveProfile() && isProjectManager())
+        && (isSuperAdmin() || request.resource.data.tenantId == currentTenant());
+      allow update: if financeRecordAccess(resource.data)
+        && financeRecordAccess(request.resource.data)
+        && request.resource.data.tenantId == resource.data.tenantId
+        && financeManager();
+      allow delete: if false;
+    }
+
+    match /paymentReceipts/{receiptId} {
+      allow read: if financeRecordAccess(resource.data);
+      allow create: if collectionAllowed('paymentReceipts')
+        && validTenant(request.resource.data)
+        && financeManager()
+        && (isSuperAdmin() || request.resource.data.tenantId == currentTenant());
+      allow update, delete: if false;
+    }
+
+    match /paymentReminders/{reminderId} {
+      allow read: if financeRecordAccess(resource.data);
+      allow create: if collectionAllowed('paymentReminders')
+        && validTenant(request.resource.data)
+        && financeManager();
+      allow update, delete: if false;
+    }
+
     match /{collection}/{recordId} {
       allow read: if isSuperAdmin()
         || collection == 'catalog'
@@ -402,7 +576,7 @@ service cloud.firestore {
           && planAllows(resource.data.feature)
           && canAccessRecord(resource.data)
         || collection in [
-          'leads', 'followups', 'quotations', 'salesOrders', 'installations', 'payments',
+          'leads', 'followups', 'quotations', 'salesOrders', 'installations',
           'surveys', 'subsidies', 'loans', 'stockMovements', 'amcs', 'serviceTickets'
         ]
           && collectionAllowed(collection)
@@ -411,7 +585,7 @@ service cloud.firestore {
 
       allow create: if isSuperAdmin()
           && collection in [
-            'leads', 'followups', 'quotations', 'salesOrders', 'installations', 'payments',
+            'leads', 'followups', 'quotations', 'salesOrders', 'installations',
             'surveys', 'subsidies', 'loans', 'inventory', 'catalog',
             'stockMovements', 'amcs', 'serviceTickets', 'history'
           ]
@@ -435,14 +609,14 @@ service cloud.firestore {
           && planAllows(request.resource.data.feature)
           && canAccessRecord(request.resource.data)
         || collection in [
-          'leads', 'followups', 'quotations', 'salesOrders', 'installations', 'payments',
+          'leads', 'followups', 'quotations', 'salesOrders', 'installations',
           'surveys', 'subsidies', 'loans', 'amcs', 'serviceTickets'
         ]
           && canCreateRecord(collection);
 
       allow update: if isSuperAdmin()
           && collection in [
-            'leads', 'followups', 'quotations', 'salesOrders', 'installations', 'payments',
+            'leads', 'followups', 'quotations', 'salesOrders', 'installations',
             'surveys', 'subsidies', 'loans', 'inventory', 'catalog',
             'stockMovements', 'amcs', 'serviceTickets', 'history'
           ]
@@ -460,7 +634,7 @@ service cloud.firestore {
           && request.resource.data.tenantId == resource.data.tenantId
           && isManagerOrAdmin()
         || collection in [
-          'leads', 'followups', 'quotations', 'salesOrders', 'installations', 'payments',
+          'leads', 'followups', 'quotations', 'salesOrders', 'installations',
           'surveys', 'subsidies', 'loans', 'amcs', 'serviceTickets'
         ]
           && collectionAllowed(collection)
@@ -472,7 +646,7 @@ service cloud.firestore {
 
       allow delete: if isSuperAdmin()
           && collection in [
-            'leads', 'followups', 'quotations', 'installations', 'payments',
+            'leads', 'followups', 'quotations', 'installations',
             'surveys', 'subsidies', 'loans', 'inventory', 'catalog',
             'stockMovements', 'amcs', 'serviceTickets', 'history'
           ]
@@ -485,7 +659,7 @@ service cloud.firestore {
           && validTenant(resource.data)
           && isManagerOrAdmin()
         || collection in [
-          'leads', 'followups', 'quotations', 'installations', 'payments',
+          'leads', 'followups', 'quotations', 'installations',
           'surveys', 'subsidies', 'loans', 'amcs', 'serviceTickets'
         ]
           && collectionAllowed(collection)

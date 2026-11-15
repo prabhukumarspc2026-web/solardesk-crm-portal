@@ -379,3 +379,71 @@ test('applies the canonical team-role permissions and accepts legacy profile ali
   await assertSucceeds(getDoc(doc(projectExecutiveDb, 'leads/lead-project-executive')));
   await assertFails(getDoc(doc(projectExecutiveDb, 'leads/lead-a')));
 });
+
+test('requires a finance sequence when issuing invoices and freezes issued records', async () => {
+  const db = testEnv.authenticatedContext('owner-b').firestore();
+  const invoiceRef = doc(db, 'invoices/finance-invoice-b');
+  const sequenceRef = doc(db, 'invoiceSequences/tenant-b/years/2025');
+  await assertSucceeds(setDoc(invoiceRef, {
+    tenantId: 'tenant-b',
+    assignedTo: 'owner-b',
+    createdBy: 'owner-b',
+    createdAt: new Date().toISOString(),
+    invoiceNo: '',
+    status: 'Draft'
+  }));
+  await assertFails(updateDoc(invoiceRef, {
+    invoiceNo: 'INV/2025-26/0001',
+    financialYear: '2025',
+    sequence: 1,
+    status: 'Issued'
+  }));
+
+  await assertSucceeds(runTransaction(db, async transaction => {
+    const invoice = await transaction.get(invoiceRef);
+    assert.equal(invoice.data().status, 'Draft');
+    transaction.set(sequenceRef, {
+      tenantId: 'tenant-b',
+      financialYear: '2025',
+      value: 1
+    });
+    transaction.update(invoiceRef, {
+      invoiceNo: 'INV/2025-26/0001',
+      financialYear: '2025',
+      sequence: 1,
+      status: 'Issued',
+      issuedAt: new Date().toISOString(),
+      issuedBy: 'owner-b'
+    });
+  }));
+  await assertFails(updateDoc(invoiceRef, { totalAmount: 1 }));
+  await assertFails(updateDoc(sequenceRef, { value: 3 }));
+});
+
+test('keeps finance documents tenant-isolated and confirmed payments immutable', async () => {
+  const ownerB = testEnv.authenticatedContext('owner-b').firestore();
+  const ownerA = testEnv.authenticatedContext('owner-a').firestore();
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'invoices/invoice-a'), {
+      tenantId: 'tenant-a',
+      assignedTo: 'owner-a',
+      status: 'Issued'
+    });
+  });
+  const paymentRef = doc(ownerB, 'payments/finance-payment-b');
+  await assertSucceeds(setDoc(paymentRef, {
+    tenantId: 'tenant-b',
+    assignedTo: 'owner-b',
+    createdBy: 'owner-b',
+    status: 'Promised',
+    amount: 125
+  }));
+  await assertSucceeds(updateDoc(paymentRef, {
+    status: 'Verified',
+    verifiedBy: 'owner-b',
+    verifiedAt: new Date().toISOString()
+  }));
+  await assertFails(updateDoc(paymentRef, { amount: 500 }));
+  await assertFails(getDoc(doc(ownerA, 'payments/finance-payment-b')));
+  await assertFails(getDoc(doc(ownerB, 'invoices/invoice-a')));
+});
