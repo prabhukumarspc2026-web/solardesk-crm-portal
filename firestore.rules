@@ -517,7 +517,7 @@ service cloud.firestore {
               && request.resource.data.status == 'Cancelled'
               && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(['status', 'cancelledAt', 'cancelledBy', 'updatedAt'])
-          );
+          ));
       allow delete: if false;
     }
 
