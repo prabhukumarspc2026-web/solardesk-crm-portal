@@ -8,14 +8,16 @@
   "scripts": {
     "migrate:tenant-data": "node scripts/migrate-tenant-data.mjs",
     "test:rules": "node --test tests/firestore-rules.test.mjs",
-    "test:finance": "node --test tests/invoice-calculations.test.mjs"
+    "test:finance": "node --test tests/invoice-calculations.test.mjs",
+    "test:solar-kits": "node --test tests/solar-kits.test.mjs",
+    "test:quotation-config": "node --test tests/quotation-config.test.mjs"
   },
   "dependencies": {
     "firebase-admin": "^14.5.0"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.0",
-    "firebase": "^12.0.0"
+    "firebase": "^12.18.0"
   },
   "overrides": {
     "@grpc/grpc-js": "^1.14.7",

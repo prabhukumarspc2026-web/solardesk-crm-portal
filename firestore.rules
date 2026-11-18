@@ -91,6 +91,11 @@ service cloud.firestore {
       return collection == 'leads' ? 'leads'
         : collection == 'followups' ? 'followups'
         : collection == 'quotations' ? 'quotations'
+        : collection in [
+          'kitCategories', 'materialCategories', 'materialMaster', 'systemConfigurations',
+          'structureConfigurations', 'bomTemplates', 'customerPriceBooks', 'solarPackages', 'gstProfiles',
+          'subsidyConfigurations', 'optionalUpgrades', 'paymentTemplates', 'quotationTemplates'
+        ] ? 'quotations'
         : collection in ['invoices', 'creditNotes', 'paymentMilestones', 'paymentReceipts', 'paymentReminders'] ? 'payments'
         : collection == 'salesOrders' ? 'installations'
         : collection == 'installations' ? 'installations'
@@ -122,6 +127,24 @@ service cloud.firestore {
       return isAdmin()
         || (isSalesManager() && canonicalRole(targetRole) == 'sales_executive')
         || (isProjectManager() && canonicalRole(targetRole) == 'project_executive');
+    }
+
+    function isQuotationConfigurationCollection(collection) {
+      return collection in [
+        'kitCategories', 'materialCategories', 'materialMaster', 'systemConfigurations',
+        'structureConfigurations', 'bomTemplates', 'customerPriceBooks', 'solarPackages', 'gstProfiles',
+        'subsidyConfigurations', 'optionalUpgrades', 'paymentTemplates', 'quotationTemplates'
+      ];
+    }
+
+    function canManageQuotationConfiguration(collection) {
+      return isAdmin()
+        || (isSalesManager() && collection in ['customerPriceBooks', 'paymentTemplates']);
+    }
+
+    function canReadQuotationConfiguration(data) {
+      return planAllows('quotations') && validTenant(data)
+        && (isSuperAdmin() || hasActiveProfile());
     }
 
     function activeSeatWithinLimit() {
@@ -329,6 +352,7 @@ service cloud.firestore {
     function historyFeatureMatches(data) {
       return (data.recordType == 'sales' && data.feature == 'leads')
         || (data.recordType == 'quotation' && data.feature == 'quotations')
+        || (data.recordType == 'quotationConfig' && data.feature == 'quotations')
         || (data.recordType == 'followup' && data.feature == 'followups')
         || (data.recordType == 'collection' && data.feature == 'payments')
         || (data.recordType in ['invoice', 'creditNote', 'paymentMilestone', 'paymentReceipt', 'paymentReminder']
@@ -567,6 +591,11 @@ service cloud.firestore {
       allow read: if isSuperAdmin()
         || collection == 'catalog'
           && validTenant(resource.data)
+        || isQuotationConfigurationCollection(collection)
+          && canReadQuotationConfiguration(resource.data)
+        || collection == 'solarKits'
+          && planAllows('quotations')
+          && validTenant(resource.data)
         || collection == 'inventory'
           && planAllows('inventory')
           && validTenant(resource.data)
@@ -586,13 +615,24 @@ service cloud.firestore {
       allow create: if isSuperAdmin()
           && collection in [
             'leads', 'followups', 'quotations', 'salesOrders', 'installations',
-            'surveys', 'subsidies', 'loans', 'inventory', 'catalog',
+            'surveys', 'subsidies', 'loans', 'inventory', 'catalog', 'solarKits',
             'stockMovements', 'amcs', 'serviceTickets', 'history'
           ]
           && validTenant(request.resource.data)
         || collection == 'catalog'
           && validTenant(request.resource.data)
           && isManagerOrAdmin()
+        || collection == 'solarKits'
+          && planAllows('quotations')
+          && validTenant(request.resource.data)
+          && (isSuperAdmin() || isManagerOrAdmin())
+        || isQuotationConfigurationCollection(collection)
+          && planAllows('quotations')
+          && validTenant(request.resource.data)
+          && (isSuperAdmin()
+            || currentTenant() == request.resource.data.tenantId
+              && canManageQuotationConfiguration(collection)
+              && request.resource.data.createdBy == request.auth.uid)
         || collection == 'inventory'
           && planAllows('inventory')
           && canCreateRecord(collection)
@@ -617,7 +657,7 @@ service cloud.firestore {
       allow update: if isSuperAdmin()
           && collection in [
             'leads', 'followups', 'quotations', 'salesOrders', 'installations',
-            'surveys', 'subsidies', 'loans', 'inventory', 'catalog',
+            'surveys', 'subsidies', 'loans', 'inventory', 'catalog', 'solarKits',
             'stockMovements', 'amcs', 'serviceTickets', 'history'
           ]
           && validTenant(resource.data)
@@ -627,6 +667,24 @@ service cloud.firestore {
           && validTenant(request.resource.data)
           && request.resource.data.tenantId == resource.data.tenantId
           && isManagerOrAdmin()
+        || collection == 'solarKits'
+          && planAllows('quotations')
+          && validTenant(resource.data)
+          && validTenant(request.resource.data)
+          && request.resource.data.tenantId == resource.data.tenantId
+          && (isSuperAdmin() || isManagerOrAdmin())
+        || isQuotationConfigurationCollection(collection)
+          && planAllows('quotations')
+          && validTenant(resource.data)
+          && validTenant(request.resource.data)
+          && request.resource.data.tenantId == resource.data.tenantId
+          && canManageQuotationConfiguration(collection)
+          && (collection != 'solarPackages'
+            || resource.data.status == 'Draft'
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'name', 'description', 'status', 'effectiveTo', 'updatedAt',
+              'updatedBy', 'assignedTo', 'shared'
+            ]))
         || collection == 'inventory'
           && planAllows('inventory')
           && validTenant(resource.data)
@@ -647,13 +705,21 @@ service cloud.firestore {
       allow delete: if isSuperAdmin()
           && collection in [
             'leads', 'followups', 'quotations', 'installations',
-            'surveys', 'subsidies', 'loans', 'inventory', 'catalog',
+            'surveys', 'subsidies', 'loans', 'inventory', 'catalog', 'solarKits',
             'stockMovements', 'amcs', 'serviceTickets', 'history'
           ]
           && validTenant(resource.data)
         || collection == 'catalog'
           && validTenant(resource.data)
           && isManagerOrAdmin()
+        || collection == 'solarKits'
+          && planAllows('quotations')
+          && validTenant(resource.data)
+          && (isSuperAdmin() || isManagerOrAdmin())
+        || isQuotationConfigurationCollection(collection)
+          && planAllows('quotations')
+          && validTenant(resource.data)
+          && canManageQuotationConfiguration(collection)
         || collection == 'inventory'
           && planAllows('inventory')
           && validTenant(resource.data)

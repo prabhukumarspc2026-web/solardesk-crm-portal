@@ -123,6 +123,16 @@ before(async () => {
       setDoc(doc(db, 'catalog/catalog-a'), {
         tenantId: 'tenant-a', name: 'Solar panel'
       }),
+      setDoc(doc(db, 'solarKits/solar-kit-a'), {
+        tenantId: 'tenant-a', name: 'Tenant A Hybrid kit', shared: true
+      }),
+      setDoc(doc(db, 'solarKits/solar-kit-b'), {
+        tenantId: 'tenant-b', name: 'Tenant B Hybrid kit', shared: true
+      }),
+      setDoc(doc(db, 'solarPackages/package-a'), {
+        tenantId: 'tenant-a', name: 'Tenant A standard package', status: 'Active',
+        assignedTo: 'owner-a', createdBy: 'owner-a'
+      }),
       setDoc(doc(db, 'stockMovements/movement-a'), {
         tenantId: 'tenant-a', assignedTo: 'owner-a'
       }),
@@ -351,6 +361,70 @@ test('allows only a tenant Business Owner to manage the quotation logo', async (
   await assertFails(updateDoc(doc(otherOwnerDb, 'workspaces/tenant-a'), {
     quotationLogo: 'data:image/png;base64,AA==', updatedAt
   }));
+});
+
+test('shares solar kits within a tenant and limits kit management to managers', async () => {
+  const ownerA = testEnv.authenticatedContext('owner-a').firestore();
+  const ownerB = testEnv.authenticatedContext('owner-b').firestore();
+  const salesManager = testEnv.authenticatedContext('sales-manager-a').firestore();
+  const salesExecutive = testEnv.authenticatedContext('sales-executive-a').firestore();
+
+  await assertSucceeds(getDoc(doc(salesExecutive, 'solarKits/solar-kit-a')));
+  await assertSucceeds(getDocs(query(
+    collection(salesExecutive, 'solarKits'),
+    where('tenantId', '==', 'tenant-a')
+  )));
+  await assertFails(getDoc(doc(ownerA, 'solarKits/solar-kit-b')));
+
+  const newKit = doc(ownerA, 'solarKits/solar-kit-new');
+  await assertSucceeds(setDoc(newKit, {
+    tenantId: 'tenant-a', name: 'New Hybrid kit', shared: true
+  }));
+  await assertSucceeds(updateDoc(newKit, { name: 'Updated Hybrid kit' }));
+  await assertSucceeds(getDoc(newKit));
+  await assertFails(setDoc(doc(ownerB, 'solarKits/solar-kit-cross-tenant'), {
+    tenantId: 'tenant-a', name: 'Cross-tenant kit', shared: true
+  }));
+  await assertSucceeds(updateDoc(doc(salesManager, 'solarKits/solar-kit-a'), {
+    name: 'Manager-updated kit'
+  }));
+  const managerKit = doc(salesManager, 'solarKits/solar-kit-manager-created');
+  await assertSucceeds(setDoc(managerKit, {
+    tenantId: 'tenant-a', name: 'Manager-created kit', shared: true
+  }));
+  await assertSucceeds(updateDoc(managerKit, { name: 'Manager-updated kit' }));
+  await assertFails(updateDoc(doc(salesExecutive, 'solarKits/solar-kit-a'), {
+    name: 'Unauthorized update'
+  }));
+  await assertFails(setDoc(doc(salesExecutive, 'solarKits/solar-kit-executive-created'), {
+    tenantId: 'tenant-a', name: 'Executive-created kit', shared: true
+  }));
+});
+
+test('shares solar packages within a tenant and restricts package management to owners', async () => {
+  const ownerA = testEnv.authenticatedContext('owner-a').firestore();
+  const ownerB = testEnv.authenticatedContext('owner-b').firestore();
+  const salesManager = testEnv.authenticatedContext('sales-manager-a').firestore();
+  const salesExecutive = testEnv.authenticatedContext('sales-executive-a').firestore();
+
+  await assertSucceeds(getDoc(doc(salesExecutive, 'solarPackages/package-a')));
+  const newPackage = doc(ownerA, 'solarPackages/package-owner-created');
+  await assertSucceeds(setDoc(newPackage, {
+    tenantId: 'tenant-a', name: 'Owner package', status: 'Draft',
+    assignedTo: 'owner-a', createdBy: 'owner-a'
+  }));
+  await assertSucceeds(updateDoc(newPackage, { name: 'Updated owner package' }));
+  await assertFails(updateDoc(doc(ownerA, 'solarPackages/package-a'), {
+    customerSellingPrice: 200000
+  }));
+  await assertSucceeds(updateDoc(doc(ownerA, 'solarPackages/package-a'), {
+    status: 'Inactive', effectiveTo: '2026-11-16'
+  }));
+  await assertFails(setDoc(doc(salesManager, 'solarPackages/package-manager-created'), {
+    tenantId: 'tenant-a', name: 'Manager package', status: 'Draft',
+    assignedTo: 'sales-manager-a', createdBy: 'sales-manager-a'
+  }));
+  await assertFails(getDoc(doc(ownerB, 'solarPackages/package-a')));
 });
 
 test('applies the canonical team-role permissions and accepts legacy profile aliases', async () => {

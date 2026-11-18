@@ -4,6 +4,18 @@ import {
   financialYearStart,
   getInvoiceStatus
 } from './finance.js';
+import { calculateSolarQuoteTotals, createDefaultSolarKits, normalizeSolarKitMaterials, referenceSolarKitMaterials, solarKitQuantityLabel } from './solar-kits.js';
+import {
+  buildConfiguredBom,
+  calculateConfiguredSubsidy,
+  calculateConfiguredTax,
+  createDefaultQuotationConfigurations,
+  effectiveGstRate,
+  resolveCustomerPrice,
+  resolveSolarPackagePrice,
+  validateMilestones
+} from './quotation-config.js';
+import { createDemoSolarData } from './demo-solar-data.js';
 
 /* SolarDesk CRM — functional browser demo and Firebase-powered multi-user portal. */
 (()=>{
@@ -30,7 +42,28 @@ const SUBSIDY_STAGES=['Registration','Documents Submitted','Under Review','Appro
 const LOAN_STAGES=['Application','Submitted','Under Review','Sanctioned','Disbursed','Rejected'];
 const TICKET_STATUSES=['Open','In Progress','Waiting for Customer','Resolved','Closed'];
 const SOURCES=['Website','Google Ads','Instagram','Facebook','WhatsApp','Referral','Walk-in','Cold Call','Other'];
-const HISTORY_TYPES={leads:'sales',quotations:'quotation',followups:'followup',payments:'collection',invoices:'invoice',creditNotes:'creditNote',paymentMilestones:'paymentMilestone',paymentReceipts:'paymentReceipt',installations:'project',surveys:'survey',subsidies:'subsidy',loans:'loan',inventory:'inventory',amcs:'amc',serviceTickets:'serviceTicket'};
+const QUOTATION_CONFIG_MODULES=[
+ {collection:'kitCategories',title:'Solar Kit Categories',columns:['name','description','status'],fields:[['name','Category name','text',true],['description','Description','textarea'],['displayOrder','Display order','number'],['status','Status','status']]},
+ {collection:'materialCategories',title:'Material Categories',columns:['name','status'],fields:[['name','Category name','text',true],['status','Status','status']]},
+ {collection:'materialMaster',title:'Material Master',columns:['materialCode','description','materialCategory','productCategory','make','capacity','uom','status'],fields:[['materialCode','Material code','text',true],['materialCategory','Material category','materialCategory',true],['productCategory','Product category','productCategory',true],['description','Customer-facing description','textarea',true],['make','Make / brand','text'],['model','Model','text'],['capacity','Capacity','text'],['specification','Specification','textarea'],['uom','Unit of measure','text'],['panelClassification','Panel classification','panelClassification'],['systemCompatibility','System compatibility','systemCompatibility'],['productWarranty','Product warranty','text'],['performanceWarranty','Performance warranty','text'],['customerUnitPrice','Customer unit price (optional)','number'],['displayInQuotation','Display in quotation','boolean'],['status','Status','status']]},
+ {collection:'systemConfigurations',title:'System Capacities',columns:['name','systemType','panelClassification','actualSolarCapacityKw','phase','status'],fields:[['name','Configuration name','text',true],['systemType','System type','systemType',true],['panelClassification','Panel classification','panelClassification',true],['nominalCapacityKw','Nominal inverter capacity (kW)','number',true],['panelWattageWp','Panel wattage (Wp)','number',true],['panelQuantity','Panel quantity','number',true],['actualSolarCapacityKw','Actual solar capacity (kWp)','computed'],['inverterCapacityKw','Inverter capacity (kW)','number',true],['inverterQuantity','Inverter quantity','number',true],['phase','Phase','phase',true],['batteryVoltage','Battery voltage','number'],['batteryCapacityAh','Battery capacity (Ah)','number'],['batteryQuantity','Battery quantity','number'],['batteryStorageCapacityKwh','Battery storage capacity (kWh)','number'],['status','Status','status']]},
+ {collection:'structureConfigurations',title:'Mounting Structure & Supply Scope',columns:['name','supplyScope','structureMaterial','installationIncluded','civilWorkIncluded','status'],fields:[['name','Structure / scope name','text',true],['description','Description','textarea'],['supplyScope','Supply scope','supplyScope',true],['northHeight','North-side height','number'],['southHeight','South-side height','number'],['heightUnit','Height unit','text'],['structureMaterial','Structure material','text'],['installationIncluded','Installation and commissioning included','boolean'],['civilWorkIncluded','Civil work included','boolean'],['additionalSpecifications','Additional specifications','textarea'],['customerScope','Customer scope','textarea'],['companyScope','Company scope','textarea'],['status','Status','status']]},
+ {collection:'bomTemplates',title:'Bill of Materials Templates',columns:['name','kitCategoryId','systemType','status'],fields:[['name','Template name','text',true],['kitCategoryId','Kit category','kitCategoryId'],['systemType','System type','systemType'],['panelClassification','Panel classification','panelClassification'],['systemConfigurationId','System configuration','systemConfigurationId'],['phase','Phase','phase'],['structureConfigurationId','Structure configuration','structureConfigurationId'],['supplyScope','Supply scope','supplyScope'],['batteryConfiguration','Battery configuration','text'],['items','BOM items (JSON)','json',true],['status','Status','status']]},
+ {collection:'customerPriceBooks',title:'Customer Price Book',columns:['name','kitCategoryId','systemType','pricingMethod','customerSellingPrice','status'],fields:[['name','Price configuration name','text',true],['kitCategoryId','Kit category','kitCategoryId',true],['systemConfigurationId','System configuration','systemConfigurationId',true],['systemType','System type','systemType',true],['panelClassification','Panel classification','panelClassification'],['phase','Phase','phase',true],['batteryConfiguration','Battery configuration','text'],['structureConfigurationId','Structure configuration','structureConfigurationId'],['supplyScope','Supply scope','supplyScope',true],['pricingMethod','Pricing method','pricingMethod',true],['customerSellingPrice','Fixed customer selling price','number'],['pricePerKw','Customer price per kWp','number'],['capacitySlabs','Capacity slabs (JSON)','json'],['gstProfileId','GST profile','gstProfileId',true],['gstInclusion','GST inclusion','gstInclusion',true],['effectiveFrom','Effective from','date'],['effectiveTo','Effective to','date'],['status','Status','status']]},
+ {collection:'solarPackages',title:'Solar Packages & Pricing',columns:['name','systemType','nominalCapacityKw','actualSolarCapacityKw','panelClassification','structureName','customerSellingPrice','gstInclusion','effectiveFrom','status'],fields:[['name','Package name','text',true],['description','Package notes','textarea'],['kitCategoryId','Solar kit category','kitCategoryId',true],['systemConfigurationId','System capacity and classification','systemConfigurationId',true],['structureConfigurationId','Mounting structure and supply scope','structureConfigurationId',true],['bomTemplateId','Bill of materials','bomTemplateId',true],['customerSellingPrice','Customer selling price (₹)','number',true],['gstProfileId','GST profile','gstProfileId',true],['gstInclusion','GST treatment','gstInclusion',true],['effectiveFrom','Effective from','date'],['effectiveTo','Effective to','date'],['status','Status','status']]},
+ {collection:'gstProfiles',title:'GST Profiles',columns:['name','effectiveRate','effectiveFrom','effectiveTo','status'],fields:[['name','Profile name','text',true],['allocations','Tax allocation rows (JSON)','json',true],['effectiveFrom','Effective from','date'],['effectiveTo','Effective to','date'],['status','Status','status']]},
+ {collection:'subsidyConfigurations',title:'Subsidy Schemes',columns:['name','customerCategory','systemType','minimumCapacityKw','maximumCapacityKw','maximumSubsidy','status'],fields:[['name','Scheme name','text',true],['customerCategory','Customer category','customerCategory'],['systemType','Eligible system type','systemType'],['panelClassification','Eligible panel classification','panelClassification'],['minimumCapacityKw','Minimum capacity (kWp)','number'],['maximumCapacityKw','Maximum capacity (kWp)','number'],['subsidyAmount','Subsidy amount','number'],['capacitySlabs','Capacity slabs (JSON)','json'],['maximumSubsidy','Maximum subsidy','number'],['state','Applicable state','text'],['eligibilityConditions','Eligibility conditions','textarea'],['effectiveFrom','Effective from','date'],['effectiveTo','Effective to','date'],['status','Status','status']]},
+ {collection:'optionalUpgrades',title:'Optional Materials & Upgrades',columns:['name','customerUnitPrice','uom','gstRate','status'],fields:[['name','Upgrade name','text',true],['description','Description','textarea'],['compatibleConfigurations','Compatible system IDs (JSON)','json'],['replacesComponentId','Replaces BOM material ID','text'],['customerUnitPrice','Customer unit price','number'],['quantity','Default quantity','number'],['uom','Unit of measure','text'],['gstRate','GST rate (%)','number'],['status','Status','status']]},
+ {collection:'paymentTemplates',title:'Payment Milestones',columns:['name','milestones','status'],fields:[['name','Template name','text',true],['milestones','Milestones (JSON)','json',true],['status','Status','status']]},
+ {collection:'quotationTemplates',title:'Quotation Templates',columns:['name','validityDays','paymentTemplateId','status'],fields:[['name','Template name','text',true],['validityDays','Validity (days)','number'],['paymentTemplateId','Default payment milestones','paymentTemplateId'],['gstProfileId','GST profile (reference)','gstProfileId'],['termsAndConditions','Terms and conditions','textarea'],['paymentTerms','Payment terms','textarea'],['customerScope','Customer scope','textarea'],['companyScope','Company scope','textarea'],['exclusions','Items excluded','textarea'],['warranty','Warranty terms','textarea'],['bankDetails','Customer payment details','textarea'],['authorizedSignatory','Authorized signatory','text'],['status','Status','status']]}
+];
+const CONFIGURATION_GROUPS=[
+ {id:'materialMaster',title:'Material Master',modules:['materialCategories','materialMaster']},
+ {id:'solarPackages',title:'Solar Packages & Pricing',modules:['solarPackages','kitCategories','systemConfigurations','structureConfigurations','bomTemplates','optionalUpgrades']},
+ {id:'commercialSettings',title:'Commercial Settings',modules:['gstProfiles','subsidyConfigurations','paymentTemplates']},
+ {id:'quotationTemplates',title:'Quotation Templates',modules:['quotationTemplates']}
+];
+const HISTORY_TYPES={leads:'sales',quotations:'quotation',followups:'followup',payments:'collection',invoices:'invoice',creditNotes:'creditNote',paymentMilestones:'paymentMilestone',paymentReceipts:'paymentReceipt',installations:'project',surveys:'survey',subsidies:'subsidy',loans:'loan',inventory:'inventory',amcs:'amc',serviceTickets:'serviceTicket',kitCategories:'quotationConfig',materialCategories:'quotationConfig',materialMaster:'quotationConfig',systemConfigurations:'quotationConfig',structureConfigurations:'quotationConfig',bomTemplates:'quotationConfig',customerPriceBooks:'quotationConfig',solarPackages:'quotationConfig',gstProfiles:'quotationConfig',subsidyConfigurations:'quotationConfig',optionalUpgrades:'quotationConfig',paymentTemplates:'quotationConfig',quotationTemplates:'quotationConfig'};
 const HISTORY_FIELD_LABELS={customerName:'Customer / company',phone:'Mobile number',city:'City / district',category:'Project category',capacityKw:'Capacity (kWp)',monthlyBill:'Monthly EB bill',source:'Lead source',stage:'Sales stage',nextFollowUp:'Next follow-up',assignedTo:'Assigned to',notes:'Remarks',leadId:'Customer / lead',systemType:'System type',price:'Quoted project value',status:'Status',validUntil:'Valid until',type:'Activity type',dueDate:'Due date',kind:'Milestone',amount:'Amount',invoiceNo:'Invoice number',invoiceType:'Invoice type',totalAmount:'Total amount',taxableAmount:'Taxable value',discountAmount:'Discount',paymentMode:'Payment mode',referenceNo:'Transaction reference',installer:'EPC contractor / installer',targetDate:'Planned completion',surveyDate:'Survey date',roofArea:'Roof area (sq. ft.)',shading:'Shading assessment',discom:'DISCOM',applicationNo:'Application number',applicationDate:'Application date',bank:'Lender / bank',quantity:'Quantity',brand:'Brand',gstRate:'GST rate',expiryDate:'Expiry date',ticketType:'Service issue',milestones:'Project checklist'};
 const types=['Residential','Commercial','Industrial','Agricultural'];
 const DATA_PAGE_SIZE=50,IMPORT_PAGE_SIZE=100,MAX_IMPORT_ROWS=20000,IMPORT_BATCH_SIZE=400,IMPORT_HISTORY_BATCH_SIZE=10;
@@ -96,8 +129,8 @@ const DEFAULT_PAYMENT_MILESTONES=[{name:'Advance',percent:10,trigger:'Before exe
 const INVOICE_TYPES=['Proforma Invoice','Tax Invoice','Stage Payment Request'];
 const PAYMENT_MODES=['UPI','Bank transfer','Cheque','Cash','Payment gateway','Other'];
 function defaultInvoiceSettings(){return {invoicePrefix:'INV',taxMode:'split',gstin:'',address:'',state:'',bankName:'',bankAccount:'',ifsc:'',paymentTerms:'Due within 15 days',reminderOffsets:[3,0,7],milestones:DEFAULT_PAYMENT_MILESTONES.map(item=>({...item}))}}
-const PAGES={dashboard:['Dashboard','SALES COMMAND CENTER','See leads, surveys, installations and service work at a glance.'],leads:['Leads','CUSTOMER PIPELINE','Capture enquiries, assign owners and convert them into solar projects.'],followups:['Follow-ups','SALES ACTIVITIES','Stay on top of calls, meetings, site visits and upcoming tasks.'],surveys:['Site Surveys','FIELD ASSESSMENTS','Record roof, shading and DISCOM details for every site.'],quotations:['Quotations','GST SOLAR PROPOSALS','Build catalog-based quotes with GST and PM Surya Ghar subsidy estimates.'],installations:['Projects','PROJECT DELIVERY','Track ten solar installation milestones through handover.'],subsidies:['Subsidy Tracker','PM SURYA GHAR','Track subsidy applications from registration through disbursement.'],invoices:['Invoices','INVOICE MANAGEMENT','Create branded proforma, tax and stage-payment documents.'],payments:['Payments','PAYMENT TRACKING','Record payments, issue receipts and monitor outstanding balances.'],loans:['Loans','CUSTOMER FINANCING','Track solar financing applications, sanctions and disbursements.'],inventory:['Inventory & Catalog','STOCK MANAGEMENT','Manage product rates, GST defaults and available project stock.'],reports:['Reports','SALES & COLLECTIONS','Review lead sources, pipeline conversion and outstanding collections.'],afterSales:['After-Sales','AMC & SERVICE','Manage service tickets, AMC contracts and renewal dates.'],salesTeam:['Sales Team','SALES TEAM MANAGEMENT','Manage salespeople and sales team access.'],projectTeam:['Project Team','PROJECT TEAM MANAGEMENT','Manage project executives and project team access.'],profile:['My Profile','ACCOUNT PROFILE','View your Solar Company Name account and sign-in details.'],subscription:['Subscription','COMPANY SUBSCRIPTION','View subscription details and account limits.']};
-let isDemo=true,fb={},currentUser=null,currentPage='dashboard',db={workspace:null,workspaces:[],users:[],leads:[],followups:[],quotations:[],salesOrders:[],installations:[],payments:[],invoices:[],creditNotes:[],paymentMilestones:[],paymentReceipts:[],paymentReminders:[],surveys:[],subsidies:[],loans:[],inventory:[],catalog:[],stockMovements:[],amcs:[],serviceTickets:[],history:[]},selectedFilter='',searchText='',busy=false,leadImportRows=null,leadImportReady=false,leadImportPage=0,leadImportProgress=null,tablePages={};
+const PAGES={dashboard:['Dashboard','SALES COMMAND CENTER','See leads, surveys, installations and service work at a glance.'],leads:['Leads','CUSTOMER PIPELINE','Capture enquiries, assign owners and convert them into solar projects.'],followups:['Follow-ups','SALES ACTIVITIES','Stay on top of calls, meetings, site visits and upcoming tasks.'],surveys:['Site Surveys','FIELD ASSESSMENTS','Record roof, shading and DISCOM details for every site.'],quotations:['Quotations','GST SOLAR PROPOSALS','Build configured solar proposals with BOM, pricing, GST and subsidy estimates.'],quotationConfig:['Quotation Configuration','CONFIGURATION MANAGEMENT','Configure solar kits, materials, capacity, structures, pricing, GST, subsidies and templates.'],installations:['Projects','PROJECT DELIVERY','Track ten solar installation milestones through handover.'],subsidies:['Subsidy Tracker','PM SURYA GHAR','Track subsidy applications from registration through disbursement.'],invoices:['Invoices','INVOICE MANAGEMENT','Create branded proforma, tax and stage-payment documents.'],payments:['Payments','PAYMENT TRACKING','Record payments, issue receipts and monitor outstanding balances.'],loans:['Loans','CUSTOMER FINANCING','Track solar financing applications, sanctions and disbursements.'],inventory:['Inventory & Catalog','STOCK MANAGEMENT','Manage product rates, GST defaults and available project stock.'],reports:['Reports','SALES & COLLECTIONS','Review lead sources, pipeline conversion and outstanding collections.'],afterSales:['After-Sales','AMC & SERVICE','Manage service tickets, AMC contracts and renewal dates.'],salesTeam:['Sales Team','SALES TEAM MANAGEMENT','Manage salespeople and sales team access.'],projectTeam:['Project Team','PROJECT TEAM MANAGEMENT','Manage project executives and project team access.'],profile:['My Profile','ACCOUNT PROFILE','View your Solar Company Name account and sign-in details.'],subscription:['Subscription','COMPANY SUBSCRIPTION','View subscription details and account limits.']};
+let isDemo=true,fb={},currentUser=null,currentPage='dashboard',db={workspace:null,workspaces:[],users:[],leads:[],followups:[],quotations:[],salesOrders:[],installations:[],payments:[],invoices:[],creditNotes:[],paymentMilestones:[],paymentReceipts:[],paymentReminders:[],surveys:[],subsidies:[],loans:[],inventory:[],catalog:[],solarKits:[],kitCategories:[],materialCategories:[],materialMaster:[],systemConfigurations:[],structureConfigurations:[],bomTemplates:[],customerPriceBooks:[],solarPackages:[],gstProfiles:[],subsidyConfigurations:[],optionalUpgrades:[],paymentTemplates:[],quotationTemplates:[],stockMovements:[],amcs:[],serviceTickets:[],history:[]},selectedFilter='',searchText='',busy=false,leadImportRows=null,leadImportReady=false,leadImportPage=0,leadImportProgress=null,tablePages={},quotationConfigTab='solarPackages';
 const requestedDemo=new URLSearchParams(window.location.search).get('demo')==='1';
 const demoStorageKey=requestedDemo?'solardesk-customer-demo-v1':'solardesk-demo-v2';
 const demoUserStorageKey=requestedDemo?'solardesk-customer-demo-user':'solardesk-demo-user';
@@ -116,6 +149,8 @@ const businessManager=()=>currentUser?.role==='business_owner'||currentUser?.rol
 const superAdmin=()=>currentUser?.role==='super_admin';
 const salesManager=()=>currentUser?.role==='sales_manager'||currentUser?.role==='manager';
 const projectManager=()=>currentUser?.role==='project_manager';
+const canManageSolarKits=()=>businessManager()||salesManager()||projectManager();
+const canManageQuotationConfig=collection=>businessManager()||salesManager()&&['customerPriceBooks','paymentTemplates'].includes(collection);
 const elevated=()=>businessManager()||salesManager()||projectManager();
 const canManageInventory=()=>elevated();
 const canManageTeam=team=>businessManager()||(team==='sales'&&salesManager())||(team==='project'&&projectManager());
@@ -124,7 +159,7 @@ const teamRoles=team=>team==='sales'?['sales_manager','sales_executive']:['proje
 const roleLabel=role=>({super_admin:'Super Admin',business_owner:'Business Owner',admin:'Business Owner',sales_manager:'Sales Manager',manager:'Sales Manager',sales_executive:'Sales Executive',sales:'Sales Executive',project_manager:'Project Manager',project_executive:'Project Executive'})[role]||role||'Team member';
 const $app=$('#app');
 function canCreateActiveUser(existing,active){return !active||existing?.active===true||num(db.workspace?.activeUserCount)<planSeatLimit()}
-function featurePageAllowed(page){if(superAdmin())return Boolean(PAGES[page]);const feature=page==='invoices'?'payments':page;return page==='dashboard'||page==='leads'||page==='profile'||page==='subscription'||page==='salesTeam'||page==='projectTeam'||planHasFeature(feature)}
+function featurePageAllowed(page){if(superAdmin())return Boolean(PAGES[page]);const feature=page==='invoices'?'payments':page==='quotationConfig'?'quotations':page;return page==='dashboard'||page==='leads'||page==='profile'||page==='subscription'||page==='salesTeam'||page==='projectTeam'||planHasFeature(feature)}
 function updateSalesLinks(){
  const email=String(window.SOLARCRM_SALES_EMAIL||'').trim(),phone=String(window.SOLARCRM_WHATSAPP_NUMBER||'').replace(/\D/g,''),salesPhone=String(window.SOLARCRM_SALES_PHONE||'').replace(/\D/g,''),booking=String(window.SOLARCRM_DEMO_BOOKING_URL||'').trim();
  const validEmail=/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(email),validPhone=phone.length>=8,validSalesPhone=salesPhone.length>=10&&salesPhone.length<=15;
@@ -155,6 +190,8 @@ function seed(){
   {id:'SKU-INV-5KW',name:'5 kW On-grid Inverter',category:'Inverter',brand:'Sample Solar',unit:'piece',quantity:11,lowStockAt:3,unitRate:42000,gstRate:DEFAULT_GST_RATE,shared:true,assignedTo:'demo-admin',createdBy:'demo-admin'},
   {id:'SKU-CABLE-1M',name:'DC Solar Cable',category:'Balance of System',brand:'Sample Solar',unit:'meter',quantity:2000,lowStockAt:250,unitRate:85,gstRate:DEFAULT_GST_RATE,shared:true,assignedTo:'demo-admin',createdBy:'demo-admin'}
  ];
+ const demoSolarData=createDemoSolarData(stamp());
+ const solarKits=demoSolarData.solarKits.map(kit=>({...kit,createdBy:'demo-admin'}));
  const surveys=[
   {id:'SUR-001',leadId:'L-002',assignedTo:'demo-project-1',surveyDate:isoOffset(-4),status:'Completed',roofArea:920,shading:'Light',discom:'TANGEDCO',connectionPhase:'Single phase',photoLinks:[],notes:'South-facing terrace; clear access and good panel layout.',createdAt:stamp(),createdBy:'demo-project-1'},
   {id:'SUR-002',leadId:'L-006',assignedTo:'demo-project-2',surveyDate:isoOffset(1),status:'Scheduled',roofArea:640,shading:'None',discom:'TANGEDCO',connectionPhase:'Single phase',photoLinks:[],notes:'Confirm roof access with customer before visit.',createdAt:stamp(),createdBy:'demo-project-2'},
@@ -186,10 +223,61 @@ function seed(){
   {id:'TKT-003',leadId:'L-013',assignedTo:'demo-project-3',ticketNo:'SRV-2026-006',ticketType:'Net meter',priority:'Normal',openedOn:isoOffset(-18),dueDate:isoOffset(-10),status:'Resolved',notes:'Net-meter reading mismatch corrected after DISCOM inspection.',createdAt:stamp(),createdBy:'demo-project-3'}
  ];
  const salesOrders=quotations.filter(q=>q.status==='Accepted').map((q,i)=>({id:'SO-'+String(i+1).padStart(3,'0'),leadId:q.leadId,quotationId:q.id,assignedTo:q.assignedTo,status:'Confirmed',contractBasis:'GST inclusive',initialDepositPercent:20,contractValue:q.customerPayable??q.price,createdAt:q.createdAt,createdBy:q.createdBy}));
- return {workspace:{id:'demo-workspace',name:DEMO_COMPANY_NAME,plan:'scale',active:true,activeUserCount:users.filter(user=>user.active&&user.role!=='super_admin').length},invoiceSettings:defaultInvoiceSettings(),workspaces:[{id:'sample-company-1',name:'Aster Solar',plan:'starter',active:true,activeUserCount:2},{id:'sample-company-2',name:'BluePeak Energy',plan:'business',active:true,activeUserCount:4},{id:'sample-company-3',name:'Sunfield Renewables',plan:'scale',active:false,activeUserCount:6}],users,leads,followups,quotations,salesOrders,installations,payments,invoices:[],creditNotes:[],paymentMilestones:[],paymentReceipts:[],paymentReminders:[],surveys,subsidies,loans,inventory,catalog:inventory.map(({id,name,category,brand,unit,unitRate,gstRate})=>({id,name,category,brand,unit,unitRate,gstRate})),stockMovements,amcs,serviceTickets,history:[]};
+ return {workspace:{id:'demo-workspace',name:DEMO_COMPANY_NAME,plan:'scale',active:true,activeUserCount:users.filter(user=>user.active&&user.role!=='super_admin').length},invoiceSettings:defaultInvoiceSettings(),workspaces:[{id:'sample-company-1',name:'Aster Solar',plan:'starter',active:true,activeUserCount:2},{id:'sample-company-2',name:'BluePeak Energy',plan:'business',active:true,activeUserCount:4},{id:'sample-company-3',name:'Sunfield Renewables',plan:'scale',active:false,activeUserCount:6}],users,leads,followups,quotations,salesOrders,installations,payments,invoices:[],creditNotes:[],paymentMilestones:[],paymentReceipts:[],paymentReminders:[],surveys,subsidies,loans,inventory,catalog:inventory.map(({id,name,category,brand,unit,unitRate,gstRate})=>({id,name,category,brand,unit,unitRate,gstRate})),solarKits,...demoSolarData.configurations,stockMovements,amcs,serviceTickets,history:[]};
 }
 function saveDemo(){if(isDemo)try{localStorage.setItem(demoStorageKey,JSON.stringify(db))}catch(e){console.warn('Demo browser storage unavailable',e)}}
-function demoInit(){isDemo=true;let fresh=false;try{db=JSON.parse(localStorage.getItem(demoStorageKey)||'null')||seed();fresh=!localStorage.getItem(demoStorageKey)}catch{db=seed();fresh=true}const sample=fresh?db:seed();for(const collection of ['history','surveys','subsidies','loans','inventory','catalog','stockMovements','amcs','serviceTickets','salesOrders','workspaces','invoices','creditNotes','paymentMilestones','paymentReceipts','paymentReminders']){db[collection]=db[collection]||sample[collection]||[]}db.invoiceSettings=db.invoiceSettings||sample.invoiceSettings||defaultInvoiceSettings();db.workspace=db.workspace||sample.workspace;db.leads=db.leads.map(lead=>({...lead,stage:normalizeLeadStage(lead.stage)}));db.followups=(db.followups||[]).map(followup=>({...followup,status:normalizeFollowupStatus(followup.status)}));db.surveys=(db.surveys||[]).map(survey=>({...survey,status:normalizeSurveyStatus(survey.status)}));db.payments=(db.payments||[]).map(payment=>({...payment,status:normalizePaymentStatus(payment.status)}));for(const project of db.installations){if(project.status==='Planning')project.status='Material Procurement';else if(project.status==='Material Ordered')project.status='Structure Installation';else if(project.status==='Structure')project.status='Module Installation';else if(project.status==='Panels')project.status='Inverter & Wiring';else if(project.status==='Wiring')project.status='Testing & Commissioning';else if(project.status==='Commissioned')project.status='Subsidy Disbursement'}if(!db.users.some(u=>['project_manager'].includes(canonicalRole(u.role))))db.users.push({id:'demo-project-manager',name:'Project Manager',email:'project.manager@example.com',role:'project_manager',active:true});if(!db.users.some(u=>canonicalRole(u.role)==='project_executive'))db.users.push(...['Gokul T (Project)','Lakshmi K (Project)','Harish V (Project)'].map((name,i)=>({id:'demo-project-'+(i+1),name,email:'project'+(i+1)+'@example.com',role:'project_executive',active:true})));db.users=db.users.filter(user=>user.role!=='super_admin').map(normalizeUser);if(!db.users.length){db=seed()}db.workspace.activeUserCount=Math.max(num(db.workspace.activeUserCount),db.users.filter(user=>user.active).length);const demoAdmin=db.users.find(user=>user.id==='demo-admin');if(demoAdmin?.name==='Admin')demoAdmin.name='Business Owner';let last=null;try{last=localStorage.getItem(demoUserStorageKey)}catch{};currentUser=normalizeUser(db.users.find(u=>u.id===last)||db.users[0]);saveDemo();showApp()}
+function mergeDemoQuotationConfigurations(configurations,defaults){
+ for(const module of QUOTATION_CONFIG_MODULES){
+  const collection=module.collection,records=configurations[collection]||[];
+  for(const record of defaults[collection]||[]){
+   const existing=records.find(item=>item.id===record.id);
+   if(!existing){records.push(record);continue}
+   if((collection==='bomTemplates'||collection==='customerPriceBooks')
+    &&existing.id.startsWith('DEMO-')&&!existing.batteryConfiguration&&record.batteryConfiguration)
+    existing.batteryConfiguration=record.batteryConfiguration;
+   if(collection==='customerPriceBooks'&&record.id.startsWith('DEMO-PRICE-')){
+    existing.customerSellingPrice=record.customerSellingPrice;
+    existing.name=record.name;
+    existing.priceBasis=record.priceBasis;
+   }
+   if(collection==='solarPackages'&&record.id.startsWith('DEMO-PACKAGE-')){
+    existing.customerSellingPrice=record.customerSellingPrice;
+    existing.priceBasis=record.priceBasis;
+   }
+   if(collection==='paymentTemplates'&&existing.id==='PAYMENT-DEFAULT'&&existing.status==='Draft')
+    existing.status=record.status;
+  }
+  if(collection==='materialMaster'){
+   for(const record of records){
+    const tierRecord=['Solar PV Module','On-grid Inverter','Hybrid Inverter'].includes(record.materialCategory);
+    if(tierRecord){
+     if(String(record.id||record.materialCode).includes('PV-550')||String(record.id||record.materialCode).includes('POWERONE'))record.productCategory='Budget';
+     else if(String(record.id||record.materialCode).includes('PV-500'))record.productCategory='Premium';
+     else record.productCategory='Standard';
+    }else record.productCategory='Standard';
+   }
+  }
+  configurations[collection]=records
+ }
+ return configurations
+}
+function mergeDemoSolarKits(kits,defaults){
+ const emptyDefaultTemplates=new Set(['solar-kit-budgetary','solar-kit-standard','solar-kit-premium']);
+ const result=(kits||[]).filter(kit=>!(emptyDefaultTemplates.has(kit.defaultTemplateId)
+  &&Array.isArray(kit.pricing)&&kit.pricing.every(row=>num(row.price)===0)));
+ for(const template of defaults){
+  const existing=result.find(kit=>kit.defaultTemplateId===template.defaultTemplateId||kit.id===template.id);
+  if(!existing){result.push(template);continue}
+  existing.defaultTemplateId=existing.defaultTemplateId||template.defaultTemplateId;
+  if(existing.id===template.id){
+   existing.pricing=template.pricing;
+   existing.priceBasis=template.priceBasis;
+  }
+  if(['Budgetary - 10.24 kWp Hybrid Solar Kit','Standard - 10.24 kWp Hybrid Solar Kit','EVVO 10.24 kWp Hybrid Solar Kit','Premium - 10.24 kWp Hybrid Solar Kit'].includes(existing.name))existing.name=template.name;
+ }
+ return result.map(kit=>({...normalizeSolarKitMaterials(kit),pricing:[]}));
+}
+function demoInit(){isDemo=true;let fresh=false;try{db=JSON.parse(localStorage.getItem(demoStorageKey)||'null')||seed();fresh=!localStorage.getItem(demoStorageKey)}catch{db=seed();fresh=true}const sample=fresh?db:seed();for(const collection of ['history','surveys','subsidies','loans','inventory','catalog','solarKits','stockMovements','amcs','serviceTickets','salesOrders','workspaces','invoices','creditNotes','paymentMilestones','paymentReceipts','paymentReminders',...QUOTATION_CONFIG_MODULES.map(module=>module.collection)]){db[collection]=db[collection]||sample[collection]||[]}db.solarKits=mergeDemoSolarKits(db.solarKits,sample.solarKits);db=mergeDemoQuotationConfigurations(db,sample);db.customerPriceBooks=[];db.invoiceSettings=db.invoiceSettings||sample.invoiceSettings||defaultInvoiceSettings();db.workspace=db.workspace||sample.workspace;db.leads=db.leads.map(lead=>({...lead,stage:normalizeLeadStage(lead.stage)}));db.followups=(db.followups||[]).map(followup=>({...followup,status:normalizeFollowupStatus(followup.status)}));db.surveys=(db.surveys||[]).map(survey=>({...survey,status:normalizeSurveyStatus(survey.status)}));db.payments=(db.payments||[]).map(payment=>({...payment,status:normalizePaymentStatus(payment.status)}));for(const project of db.installations){if(project.status==='Planning')project.status='Material Procurement';else if(project.status==='Material Ordered')project.status='Structure Installation';else if(project.status==='Structure')project.status='Module Installation';else if(project.status==='Panels')project.status='Inverter & Wiring';else if(project.status==='Wiring')project.status='Testing & Commissioning';else if(project.status==='Commissioned')project.status='Subsidy Disbursement'}if(!db.users.some(u=>['project_manager'].includes(canonicalRole(u.role))))db.users.push({id:'demo-project-manager',name:'Project Manager',email:'project.manager@example.com',role:'project_manager',active:true});if(!db.users.some(u=>canonicalRole(u.role)==='project_executive'))db.users.push(...['Gokul T (Project)','Lakshmi K (Project)','Harish V (Project)'].map((name,i)=>({id:'demo-project-'+(i+1),name,email:'project'+(i+1)+'@example.com',role:'project_executive',active:true})));db.users=db.users.filter(user=>user.role!=='super_admin').map(normalizeUser);if(!db.users.length){db=seed()}db.workspace.activeUserCount=Math.max(num(db.workspace.activeUserCount),db.users.filter(user=>user.active).length);const demoAdmin=db.users.find(user=>user.id==='demo-admin');if(demoAdmin?.name==='Admin')demoAdmin.name='Business Owner';let last=null;try{last=localStorage.getItem(demoUserStorageKey)}catch{};currentUser=normalizeUser(db.users.find(u=>u.id===last)||db.users[0]);saveDemo();showApp()}
 function loginError(e){let msg=e?.message||'Unable to sign in.';if(msg.includes('auth/invalid-credential')||msg.includes('auth/wrong-password'))msg='Incorrect email or password.';if(msg.includes('auth/operation-not-allowed'))msg='Google sign-in is not enabled for this Firebase project. Ask the administrator to enable the Google provider.';if(msg.includes('auth/unauthorized-domain'))msg='This website domain is not authorized for Firebase sign-in. Ask the administrator to add it in Firebase Authentication settings.';if(msg.includes('auth/popup-blocked'))msg='The Google sign-in popup was blocked. Allow popups for this site and try again.';if(msg.includes('Missing or insufficient permissions'))msg='You do not have permission for this workspace. Check the user profile and Firestore rules.';$('#login-error').textContent=msg;toast(msg,true)}
 async function initFirebase(){
  isDemo=false;$('#login').classList.remove('hidden');const v='13.1.0';const [app,auth,store]=await Promise.all([import(`https://www.gstatic.com/firebasejs/${v}/firebase-app.js`),import(`https://www.gstatic.com/firebasejs/${v}/firebase-auth.js`),import(`https://www.gstatic.com/firebasejs/${v}/firebase-firestore.js`)]);
@@ -212,24 +300,68 @@ async function getAllDocuments(buildQuery){
  return rows.map(snapshot=>({id:snapshot.id,...snapshot.data()}))
 }
 async function fetchWorkspaces(){const {collection,query}=fb.api;const rows=await getAllDocuments((collectionFn,queryFn,clauses)=>queryFn(collectionFn(fb.store,'tenantDirectory'),...clauses));db.workspaces=rows.map(({id,name,plan,active,activeUserCount})=>({id,name,plan,active,activeUserCount}));db.workspaces.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')))}
+async function ensureDefaultSolarKits(){
+  const canManage=canManageSolarKits();
+  if(canManage){
+   for(const template of createDefaultSolarKits()){
+    if(db.solarKits.some(kit=>kit.defaultTemplateId===template.defaultTemplateId))continue;
+    const documentId=`default-${encodeURIComponent(tenantId())}-${template.defaultTemplateId}`,record={...template},data={...record,createdBy:uid(),createdAt:stamp(),tenantId:tenantId()};
+    delete data.id;
+    await fb.api.setDoc(fb.api.doc(fb.store,'solarKits',documentId),data);
+    db.solarKits.push({id:documentId,...data});
+   }
+ }
+  for(let index=0;index<db.solarKits.length;index++){
+   const kit=db.solarKits[index],normalized=normalizeSolarKitMaterials(kit);
+   if(normalized===kit)continue;
+   if(canManage){
+    const {id,...data}=normalized;
+    await fb.api.updateDoc(fb.api.doc(fb.store,'solarKits',id),data);
+   }
+   db.solarKits[index]=normalized;
+  }
+}
+async function ensureDefaultQuotationConfigurations(){
+ if(!businessManager())return;
+ const defaults=createDefaultQuotationConfigurations(stamp());
+ for(const module of QUOTATION_CONFIG_MODULES){
+  const rows=db[module.collection]||[],existingIds=new Set(rows.map(record=>record.defaultConfigId||record.id));
+  for(const template of defaults[module.collection]||[]){
+   if(existingIds.has(template.id))continue;
+   const documentId=`default-${encodeURIComponent(tenantId())}-${module.collection}-${template.id}`,data={...template,defaultConfigId:template.id,tenantId:tenantId(),createdBy:uid(),createdAt:stamp()};
+   delete data.id;
+   await fb.api.setDoc(fb.api.doc(fb.store,module.collection,documentId),data);
+   rows.push({id:documentId,...data});
+  }
+  db[module.collection]=rows;
+ }
+}
 async function fetchRecords(){if(isDemo)return;if(superAdmin()&&!tenantId())throw Error('Select a company workspace before loading its data.');const {collection,query,where,doc,getDoc}=fb.api,assigned=!elevated();
  const workspaceSnapshot=await getDoc(doc(fb.store,'workspaces',tenantId()));
  if(!workspaceSnapshot.exists()||!superAdmin()&&workspaceSnapshot.data().active!==true)throw Error('Your company workspace is missing or inactive. Ask the administrator to complete workspace setup.');
  const workspace={id:workspaceSnapshot.id,...workspaceSnapshot.data()};
  if(!PLAN_LIMITS[workspace.plan])throw Error('The company workspace has an invalid subscription tier. Ask the administrator to correct it.');
  db.workspace=workspace;
- const baseCols=['leads','followups','quotations','salesOrders','installations','surveys','catalog','history'];
+ const baseCols=['leads','followups','quotations','salesOrders','installations','surveys','catalog','solarKits','history',...QUOTATION_CONFIG_MODULES.map(module=>module.collection)];
  const featureCols=Object.keys(TIER_FEATURES).filter(name=>superAdmin()||planHasFeature(name));
  const financeCols=superAdmin()||planHasFeature('payments')?['invoices','creditNotes','paymentMilestones','paymentReceipts','paymentReminders']:[];
  const cols=[...new Set([...baseCols,...featureCols,...financeCols])];
  let datasets=await Promise.all(cols.map(c=>{
   const filters=[where('tenantId','==',tenantId())];
-  if(assigned&&!['inventory','catalog'].includes(c))filters.push(where('assignedTo','==',uid()));
+  if(assigned&&!['inventory','catalog','solarKits',...QUOTATION_CONFIG_MODULES.map(module=>module.collection)].includes(c))filters.push(where('assignedTo','==',uid()));
   if(c==='history'&&!superAdmin())filters.push(where('feature','in',workspacePlan().features));
   return getAllDocuments((collectionFn,queryFn,clauses)=>queryFn(collectionFn(fb.store,c),...filters,...clauses))
  }));
  cols.forEach((c,i)=>db[c]=datasets[i]);
- for(const collectionName of ['payments','subsidies','loans','inventory','stockMovements','amcs','serviceTickets','invoices','creditNotes','paymentMilestones','paymentReceipts','paymentReminders'])if(!cols.includes(collectionName))db[collectionName]=[];
+ db.materialMaster=(db.materialMaster||[]).map(record=>({
+  ...record,
+  productCategory:['Solar PV Module','On-grid Inverter','Hybrid Inverter'].includes(record.materialCategory)
+   ?(['Budget','Standard','Premium'].includes(record.productCategory)?record.productCategory:'Standard')
+   :'Standard'
+ }));
+ for(const collectionName of ['payments','subsidies','loans','inventory','solarKits','stockMovements','amcs','serviceTickets','invoices','creditNotes','paymentMilestones','paymentReceipts','paymentReminders',...QUOTATION_CONFIG_MODULES.map(module=>module.collection)])if(!cols.includes(collectionName))db[collectionName]=[];
+ await ensureDefaultSolarKits();
+ await ensureDefaultQuotationConfigurations();
  db.invoiceSettings=defaultInvoiceSettings();
  if(superAdmin()||canManageFinance()||projectManager()){const settingsSnapshot=await getDoc(doc(fb.store,'invoiceSettings',tenantId()));if(settingsSnapshot.exists())db.invoiceSettings={...defaultInvoiceSettings(),...settingsSnapshot.data()}}
  db.leads=db.leads.map(lead=>({...lead,stage:normalizeLeadStage(lead.stage)}));
@@ -242,7 +374,7 @@ async function fetchRecords(){if(isDemo)return;if(superAdmin()&&!tenantId())thro
  if(businessManager())db.users=db.users.map(normalizeUser);
  else db.users=[{...currentUser}];
 }
-async function createHistory(entry){const item={...entry,tenantId:tenantId(),feature:({sales:'leads',quotation:'quotations',followup:'followups',collection:'payments',invoice:'payments',creditNote:'payments',paymentMilestone:'payments',paymentReceipt:'payments',paymentReminder:'payments',project:'installations',survey:'surveys',subsidy:'subsidies',loan:'loans',inventory:'inventory',amc:'afterSales',serviceTicket:'afterSales'})[entry.recordType],actorId:uid(),actorName:currentUser.name||'Team member',createdAt:stamp()};if(isDemo){item.id='H-'+Date.now().toString(36)+Math.floor(Math.random()*999);db.history.unshift(item);saveDemo();return item.id}const r=await fb.api.addDoc(fb.api.collection(fb.store,'history'),item);return r.id}
+async function createHistory(entry){const item={...entry,tenantId:tenantId(),feature:({sales:'leads',quotation:'quotations',quotationConfig:'quotations',followup:'followups',collection:'payments',invoice:'payments',creditNote:'payments',paymentMilestone:'payments',paymentReceipt:'payments',paymentReminder:'payments',project:'installations',survey:'surveys',subsidy:'subsidies',loan:'loans',inventory:'inventory',amc:'afterSales',serviceTicket:'afterSales'})[entry.recordType],actorId:uid(),actorName:currentUser.name||'Team member',createdAt:stamp()};if(isDemo){item.id='H-'+Date.now().toString(36)+Math.floor(Math.random()*999);db.history.unshift(item);saveDemo();return item.id}const r=await fb.api.addDoc(fb.api.collection(fb.store,'history'),item);return r.id}
 function historyValue(field,value){if(value===undefined||value===null||value==='')return '(empty)';if(field==='assignedTo')return personOf(value);if(field==='leadId')return leadOf(value)?.customerName||String(value);if(field==='milestones'&&Array.isArray(value))return value.map(item=>`${item.name}: ${item.status}`).join('; ');if(typeof value==='boolean')return value?'Yes':'No';return String(value)}
 async function writeRecord(col,item,id){item={...item,tenantId:tenantId()};const recordType=HISTORY_TYPES[col],tracksHistory=Boolean(recordType),previous=tracksHistory?db[col].find(r=>r.id===id):null;let recordId=id;
  if(isDemo){db[col]=db[col]||[];if(id){let i=db[col].findIndex(r=>r.id===id);if(i>=0)db[col][i]={...db[col][i],...item};else throw Error('Record not found')}else{item.id=col.slice(0,1).toUpperCase()+'-'+Date.now().toString(36)+Math.floor(Math.random()*999);db[col].unshift(item);recordId=item.id}saveDemo()}
@@ -284,7 +416,7 @@ function showApp(){
  const name=currentUser?.name||'Team member',initials=name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0].toUpperCase()).join('')||'U';
  $('#public-site').classList.add('hidden');$('#login').classList.add('hidden');$app.classList.remove('hidden');$('#company-name').textContent=companyName();$('#workspace-plan-label').textContent=db.workspace?`${workspacePlan().name} · ${num(db.workspace.activeUserCount)}/${planSeatLimit()} users`:superAdmin()?`${db.workspaces.length} companies`:'Company workspace';const switcher=$('#super-admin-workspace');switcher.classList.toggle('hidden',!superAdmin()||!db.workspaces.length);switcher.innerHTML=db.workspaces.map(workspace=>`<option value="${esc(workspace.id)}" ${workspace.id===db.workspace?.id?'selected':''}>${esc(workspace.name||workspace.id)}${workspace.active?'':' (suspended)'}</option>`).join('');switcher.value=db.workspace?.id||'';$('#side-name').textContent=name;$('#side-role').textContent=roleLabel(currentUser.role);$('#side-avatar').textContent=initials[0];$('#top-avatar-initials').textContent=initials;$('#top-profile-name').textContent=name;$('#top-avatar').setAttribute('aria-label',`Open profile for ${name}`);$('#mode-indicator').textContent=isDemo?'Demo mode':'Live workspace';$('.live-pill').classList.toggle('hidden',isDemo);$('#footer-mode').textContent=isDemo?'Demo workspace':'Connected to Firebase';$('#demo-banner').classList.toggle('hidden',!isDemo);render()
 }
-async function selectSuperAdminWorkspace(workspaceId){if(!superAdmin())return;const workspace=db.workspaces.find(item=>item.id===workspaceId);if(!workspace)return;const previous=db.workspace;db.workspace=workspace;try{if(isDemo){for(const collection of ['leads','followups','quotations','salesOrders','installations','payments','surveys','subsidies','loans','inventory','catalog','stockMovements','amcs','serviceTickets','history'])db[collection]=(db[collection]||[]).map(record=>({...record,tenantId:workspace.id}));db.users=db.users.map(user=>user.role==='super_admin'?user:{...user,tenantId:workspace.id});db.workspace.activeUserCount=db.users.filter(user=>user.active&&user.role!=='super_admin').length;saveDemo()}else{await fetchRecords();localStorage.setItem('solardesk-super-admin-workspace',workspace.id)}currentPage='dashboard';showApp()}catch(error){db.workspace=previous;showApp();loginError(error)}}
+async function selectSuperAdminWorkspace(workspaceId){if(!superAdmin())return;const workspace=db.workspaces.find(item=>item.id===workspaceId);if(!workspace)return;const previous=db.workspace;db.workspace=workspace;try{if(isDemo){for(const collection of ['leads','followups','quotations','salesOrders','installations','payments','surveys','subsidies','loans','inventory','catalog','solarKits',...QUOTATION_CONFIG_MODULES.map(module=>module.collection),'stockMovements','amcs','serviceTickets','history'])db[collection]=(db[collection]||[]).map(record=>({...record,tenantId:workspace.id}));db.users=db.users.map(user=>user.role==='super_admin'?user:{...user,tenantId:workspace.id});db.workspace.activeUserCount=db.users.filter(user=>user.active&&user.role!=='super_admin').length;saveDemo()}else{await fetchRecords();localStorage.setItem('solardesk-super-admin-workspace',workspace.id)}currentPage='dashboard';showApp()}catch(error){db.workspace=previous;showApp();loginError(error)}}
 const visible=rows=>elevated()?rows:rows.filter(r=>r.shared===true||r.assignedTo===uid());
 const defaultRecordAssignee=()=>superAdmin()?db.users.find(user=>user.active&&['sales_executive','sales_manager'].includes(user.role))?.id||uid():uid();
 function leadOf(id){return db.leads.find(x=>x.id===id)}function personOf(id){return db.users.find(x=>x.id===id)?.name||'Unassigned'}
@@ -303,7 +435,7 @@ function table(headers,body){
 }
 function pageHead(){let p=PAGES[currentPage];$('#app').classList.remove('dashboard-mode');$('#current-page').textContent=p[0];$('#page-eyebrow').textContent=p[1];$('#page-title').innerHTML=currentPage==='dashboard'?`Good day, <span>${esc((currentUser.name||'Owner').split(' ')[0])}</span> 👋`:esc(p[0]);$('#page-subtitle').textContent=p[2];const action=$('#main-action'),exportB=$('#export-btn');action.classList.remove('hidden');exportB.classList.toggle('hidden',!['dashboard','leads'].includes(currentPage));$('#lead-template-btn').classList.toggle('hidden',currentPage!=='leads');$('#lead-import-btn').classList.toggle('hidden',currentPage!=='leads');let captions={dashboard:'+ New Lead',leads:'+ New Lead',followups:'+ Add Follow-up',surveys:'+ New Survey',quotations:'+ New Quotation',installations:'+ New Project',subsidies:'+ Track Subsidy',invoices:'+ New Invoice',payments:'+ Record Payment',loans:'+ Track Loan',inventory:'+ Add Product',afterSales:'+ Add AMC',salesTeam:'+ Add Sales Team Member',projectTeam:'+ Add Project Team Member'};action.textContent=captions[currentPage]||'';action.classList.toggle('hidden',currentPage==='profile'||currentPage==='reports'||(currentPage==='invoices'&&!canManageFinance())||(currentPage==='inventory'&&!canManageInventory())||(currentPage==='subscription')||(currentPage==='salesTeam'&&!canManageTeam('sales'))||(currentPage==='projectTeam'&&!canManageTeam('project'))||!featurePageAllowed(currentPage));$('#nav-leads').textContent=db.leads.length;
  document.querySelectorAll('.nav-item').forEach(b=>{b.classList.toggle('active',b.dataset.page===currentPage);if(b.dataset.page)b.classList.toggle('hidden',!featurePageAllowed(b.dataset.page))});const teamManagementVisible=superAdmin();$('.nav-caption-bottom').classList.toggle('hidden',!teamManagementVisible);$('#team-link').classList.toggle('hidden',!teamManagementVisible);$('#project-team-link').classList.toggle('hidden',!teamManagementVisible)}
-function render(){if(!currentUser)return;if(!featurePageAllowed(currentPage)){const blockedPage=currentPage;currentPage=superAdmin()?'subscription':'dashboard';toast(superAdmin()?'Super Admin access is limited to subscriptions and profile.':blockedPage==='subscription'?`${PAGES[blockedPage][0]} is available only to a Super Admin.`:`${workspacePlan().name} does not include ${PAGES[blockedPage]?.[0]||'this feature'}.`,true)}pageHead();tableRenderIndex=0;const renderers={dashboard:renderDashboard,leads:()=>leadImportRows?renderLeadImportPreview():renderLeads(),followups:renderFollowups,surveys:()=>renderFeaturePage('surveys'),quotations:renderQuotes,installations:renderInstallations,subsidies:()=>renderFeaturePage('subsidies'),invoices:renderInvoices,payments:renderPayments,loans:()=>renderFeaturePage('loans'),inventory:()=>renderFeaturePage('inventory'),reports:renderReports,afterSales:()=>renderFeaturePage('afterSales'),salesTeam:()=>renderTeam('sales'),projectTeam:()=>renderTeam('project'),profile:renderProfile,subscription:()=>superAdmin()?renderGlobalSubscriptions():renderSubscription()};let markup=renderers[currentPage]();if(currentPage==='subscription'&&!superAdmin()){markup=markup.replace('<h3>Solar Company Name —',`<h3>${esc(companyName())} —`);if(businessManager())markup=markup.replace(/<li>Create the owner's <code>users\/\{uid\}<\/code>[\s\S]*?<\/li>/,'<li>Create the initial owner profile in Firebase Console, then run the documented tenant data migration before deploying Firestore rules.</li>')}$('#page-content').innerHTML=markup;bindFilters()}
+function render(){if(!currentUser)return;if(!featurePageAllowed(currentPage)){const blockedPage=currentPage;currentPage=superAdmin()?'subscription':'dashboard';toast(superAdmin()?'Super Admin access is limited to subscriptions and profile.':blockedPage==='subscription'?`${PAGES[blockedPage][0]} is available only to a Super Admin.`:`${workspacePlan().name} does not include ${PAGES[blockedPage]?.[0]||'this feature'}.`,true)}pageHead();tableRenderIndex=0;const renderers={dashboard:renderDashboard,leads:()=>leadImportRows?renderLeadImportPreview():renderLeads(),followups:renderFollowups,surveys:()=>renderFeaturePage('surveys'),quotations:renderQuotes,quotationConfig:renderQuotationConfiguration,installations:renderInstallations,subsidies:()=>renderFeaturePage('subsidies'),invoices:renderInvoices,payments:renderPayments,loans:()=>renderFeaturePage('loans'),inventory:()=>renderFeaturePage('inventory'),reports:renderReports,afterSales:()=>renderFeaturePage('afterSales'),salesTeam:()=>renderTeam('sales'),projectTeam:()=>renderTeam('project'),profile:renderProfile,subscription:()=>superAdmin()?renderGlobalSubscriptions():renderSubscription()};let markup=renderers[currentPage]();if(currentPage==='subscription'&&!superAdmin()){markup=markup.replace('<h3>Solar Company Name —',`<h3>${esc(companyName())} —`);if(businessManager())markup=markup.replace(/<li>Create the owner's <code>users\/\{uid\}<\/code>[\s\S]*?<\/li>/,'<li>Create the initial owner profile in Firebase Console, then run the documented tenant data migration before deploying Firestore rules.</li>')}$('#page-content').innerHTML=markup;bindFilters()}
 
 function renderDashboard(){
  const leads=visible(db.leads),followups=visible(db.followups),quotes=visible(db.quotations),won=leads.filter(l=>l.stage==='Won');
@@ -449,26 +581,318 @@ async function importReviewedLeads(){
 }
 function updateImportProgress(){const progress=$('#page-content .import-progress progress'),label=$('#page-content .import-progress span'),status=$('#page-content .import-status');if(progress)progress.value=leadImportProgress.leadSaved+leadImportProgress.historySaved;if(label)label.textContent=`${leadImportProgress.leadSaved} / ${leadImportRows.length} leads saved · ${leadImportProgress.historySaved} / ${leadImportRows.length} audit entries saved`;if(status)status.textContent=`Saving in chunks: ${leadImportProgress.leadSaved} leads and ${leadImportProgress.historySaved} audit entries saved.`}
 function renderFollowups(){let rows=matching(visible(db.followups).map(f=>({...f,status:normalizeFollowupStatus(f.status)})),f=>[leadOf(f.leadId)?.customerName||'',f.type,f.notes,personOf(f.assignedTo)].join(' ')).sort((a,b)=>a.dueDate.localeCompare(b.dueDate));let overdue=rows.filter(f=>f.status==='Scheduled'&&f.dueDate<today()).length;return `<div class="stat-grid">${displayCard('Scheduled',String(visible(db.followups).filter(f=>normalizeFollowupStatus(f.status)==='Scheduled').length),'Scheduled activities','◷','blue')}${displayCard('Overdue',String(overdue),'Needs immediate action','!','orange')}${displayCard('Completed',String(visible(db.followups).filter(f=>normalizeFollowupStatus(f.status)==='Completed').length),'Finished tasks','✓','green')}${displayCard('Due today',String(visible(db.followups).filter(f=>normalizeFollowupStatus(f.status)==='Scheduled'&&f.dueDate===today()).length),'Today\'s follow-ups','▣','violet')}</div><div class="panel"><div class="table-top"><div><div class="panel-title">Follow-up schedule</div><div class="panel-subtitle">Contact history and upcoming tasks</div></div>${filterBar('Search customer, action...',FOLLOWUP_STAGES)}</div>${table(['Customer','Activity','Due date','Assigned to','Status','Action'],rows.map(f=>`<tr><td><strong>${esc(leadOf(f.leadId)?.customerName||'Unknown lead')}</strong><small>${esc(f.notes||'—').slice(0,62)}</small></td><td>${esc(f.type)}</td><td><span style="color:${f.status==='Scheduled'&&f.dueDate<today()?'#d26b55':'inherit'}">${dateLabel(f.dueDate)}</span></td><td>${userChip(f.assignedTo)}</td><td>${tag(f.status)}</td><td><button class="cell-action" data-act="edit-followup" data-id="${esc(f.id)}">Update →</button></td></tr>`).join(''))}</div>`}
-function renderQuotes(){let rows=matching(visible(db.quotations),q=>[leadOf(q.leadId)?.customerName,q.systemType,q.status,q.productName,personOf(q.assignedTo)].join(' '));const total=rows.reduce((s,q)=>s+num(q.price),0);return `<div class="stat-grid">${displayCard('Quotes created',String(rows.length),'All proposals','▤','blue')}${displayCard('Total quoted',money(total),'GST included where configured','₹','green')}${displayCard('Accepted',String(rows.filter(q=>q.status==='Accepted').length),'Customer-approved proposals','✓','violet')}${displayCard('Awaiting reply',String(rows.filter(q=>['Sent','Revised'].includes(q.status)).length),'Sent or revised proposals','◷','orange')}</div><div class="panel"><div class="table-top"><div><div class="panel-title">Quotations</div><div class="panel-subtitle">Catalog pricing, GST, subsidy estimates and customer acceptance</div></div>${filterBar('Search customer or system...',QUOTESTATUS)}</div>${table(['Quotation','Customer','System','Capacity','Gross incl. GST','Customer after subsidy','Status','Action'],rows.map(q=>`<tr><td><strong>${esc(q.id.slice(0,12))}</strong><small>Valid until ${dateLabel(q.validUntil)}</small></td><td><strong>${esc(leadOf(q.leadId)?.customerName||'—')}</strong></td><td>${esc(q.systemType)}<small>${esc(q.productName||'Manual pricing')}</small></td><td>${fmtKw(q.capacityKw)}</td><td><strong>${money(q.price)}</strong><small>GST ${num(q.gstRate)}% · ${money(q.gstAmount)}</small></td><td><strong>${money(q.customerPayable??q.price)}</strong><small>Subsidy estimate ${money(num(q.centralSubsidy)+num(q.stateSubsidy))}</small></td><td>${tag(q.status)}</td><td><button class="cell-action" data-print-quote="${esc(q.id)}">Print →</button><button class="cell-action" data-act="edit-quotation" data-id="${esc(q.id)}">Update</button></td></tr>`).join(''))}<p class="privacy">Subsidy is an estimate only. Confirm current central/state eligibility and tax treatment before issuing a customer offer.</p></div>`}
+function renderQuotes(){let rows=matching(visible(db.quotations),q=>[leadOf(q.leadId)?.customerName,q.systemType,q.status==='Accepted'?'Confirmed':q.status,q.productName,personOf(q.assignedTo)].join(' '));const total=rows.reduce((s,q)=>s+num(q.price),0);return `<div class="stat-grid">${displayCard('Quotes created',String(rows.length),'All proposals','▤','blue')}${displayCard('Total quoted',money(total),'GST included where configured','₹','green')}${displayCard('Confirmed',String(rows.filter(q=>q.status==='Accepted').length),'Customer-approved proposals','✓','violet')}${displayCard('Awaiting reply',String(rows.filter(q=>['Sent','Revised'].includes(q.status)).length),'Sent or revised proposals','◷','orange')}</div><div class="panel"><div class="table-top"><div><div class="panel-title">Quotations</div><div class="panel-subtitle">Catalog pricing, GST, subsidy estimates and customer confirmation</div></div>${filterBar('Search customer or system...',QUOTESTATUS.map(status=>status==='Accepted'?'Confirmed':status))}</div>${table(['Quotation','Customer','System','Capacity','Gross incl. GST','Customer after subsidy','Status','Action'],rows.map(q=>`<tr><td><strong>${esc(q.id.slice(0,12))}</strong><small>Valid until ${dateLabel(q.validUntil)}</small></td><td><strong>${esc(leadOf(q.leadId)?.customerName||'—')}</strong></td><td>${esc(q.systemType)}<small>${esc(q.productName||'Manual pricing')}</small></td><td>${fmtKw(q.capacityKw)}</td><td><strong>${money(q.price)}</strong><small>GST ${num(q.gstRate)}% · ${money(q.gstAmount)}</small></td><td><strong>${money(q.customerPayable??q.price)}</strong><small>Subsidy estimate ${money(num(q.centralSubsidy)+num(q.stateSubsidy))}</small></td><td>${tag(q.status==='Accepted'?'Confirmed':q.status)}</td><td><button class="cell-action" data-print-quote="${esc(q.id)}">Print →</button><button class="cell-action" data-act="edit-quotation" data-id="${esc(q.id)}">Update</button></td></tr>`).join(''))}<p class="privacy">Subsidy is an estimate only. Confirm current central/state eligibility and tax treatment before issuing a customer offer.</p></div>`}
 function quotationLogoDataUrl(logo){return typeof logo==='string'&&logo.length<=250000&&/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(logo)}
 function quotationLogoData(){const logo=db.workspace?.quotationLogo;return quotationLogoDataUrl(logo)?logo:''}
 function canUploadQuotationLogo(){return businessManager()&&!superAdmin()}
 async function saveQuotationLogo(logo){if(!canUploadQuotationLogo())throw Error('Only the Business Owner can manage quotation branding.');if(logo&&!quotationLogoDataUrl(logo))throw Error('Choose a valid PNG, JPEG or WebP logo.');const updatedAt=stamp();if(isDemo){const previous=db.workspace;db.workspace={...db.workspace,quotationLogo:logo,updatedAt};try{localStorage.setItem(demoStorageKey,JSON.stringify(db))}catch(error){db.workspace=previous;console.warn('Demo browser storage unavailable',error);throw Error('The quotation logo could not be saved in this browser. Check storage availability and try again.')}}else{if(!tenantId())throw Error('Select a company workspace before changing its logo.');await fb.api.updateDoc(fb.api.doc(fb.store,'workspaces',tenantId()),{quotationLogo:logo,updatedAt});db.workspace={...db.workspace,quotationLogo:logo,updatedAt}}render();toast(logo?'Quotation logo saved.':'Quotation logo removed.')}
 async function uploadQuotationLogo(file){if(!canUploadQuotationLogo())throw Error('Only the Business Owner can manage quotation branding.');if(!file)return;if(!['image/png','image/jpeg','image/webp'].includes(file.type))throw Error('Choose a PNG, JPEG or WebP image.');if(file.size>180*1024)throw Error('The logo must be 180 KB or smaller.');const image=await createImageBitmap(file);const validDimensions=image.width<=4096&&image.height<=4096&&image.width*image.height<=16000000;image.close();if(!validDimensions)throw Error('The logo image must be no larger than 4096 × 4096 pixels.');const logo=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.addEventListener('load',()=>typeof reader.result==='string'?resolve(reader.result):reject(Error('Could not read the logo file.')));reader.addEventListener('error',()=>reject(reader.error||Error('Could not read the logo file.')));reader.readAsDataURL(file)});if(!quotationLogoDataUrl(logo))throw Error('The selected file is not a supported image.');await saveQuotationLogo(logo)}
 function renderQuotationBranding(){const logo=quotationLogoData(),canUpload=canUploadQuotationLogo();if(!logo&&!canUpload)return '';return `<div class="panel quote-branding-panel"><div class="quote-branding-preview">${logo?`<img src="${logo}" alt="${esc(companyName())} logo">`:'<span>No logo uploaded</span>'}</div><div class="quote-branding-copy"><h2>Quotation branding</h2><p>Upload your company logo to display it on every printed quotation.</p>${canUpload?`<label class="btn subtle quote-logo-upload">Upload logo<input type="file" data-quotation-logo-file accept="image/png,image/jpeg,image/webp"></label><small>PNG, JPEG or WebP · up to 180 KB</small>${logo?'<button class="cell-action" type="button" data-remove-quotation-logo>Remove logo</button>':''}`:'<small>Only the Business Owner can change this logo.</small>'}</div></div>`}
-function renderQuotes(){let rows=matching(visible(db.quotations),q=>[leadOf(q.leadId)?.customerName,q.systemType,q.status,q.productName,personOf(q.assignedTo)].join(' '));const total=rows.reduce((s,q)=>s+num(q.price),0),catalogPanel=`<div class="panel"><div class="table-top"><div><div class="panel-title">Product catalog <span class="muted-small">(${db.catalog.length})</span></div><div class="panel-subtitle">Shared product rates are available in every plan; stock tracking is Scale-only.</div></div>${businessManager()?'<button class="btn subtle" type="button" data-new-catalog>+ Add catalog item</button>':''}</div>${db.catalog.length?table(['Product','Category','Brand','Unit rate','GST','Action'],db.catalog.map(item=>`<tr><td><strong>${esc(item.name)}</strong></td><td>${esc(item.category||'—')}</td><td>${esc(item.brand||'—')}</td><td>${money(item.unitRate)} / ${esc(item.unit||'unit')}</td><td>${num(item.gstRate)}%</td><td>${businessManager()?`<button class="cell-action" data-edit-catalog="${esc(item.id)}">Update</button>`:'Read only'}</td></tr>`).join('')):empty('No catalog products yet. Ask the Business Manager to add products.')}</div>`;return `${renderQuotationBranding()}${catalogPanel}<div class="stat-grid">${displayCard('Quotes created',String(rows.length),'All proposals','▤','blue')}${displayCard('Total quoted',money(total),'GST included where configured','₹','green')}${displayCard('Accepted',String(rows.filter(q=>q.status==='Accepted').length),'Customer-approved proposals','✓','violet')}${displayCard('Awaiting reply',String(rows.filter(q=>['Sent','Revised'].includes(q.status)).length),'Sent or revised proposals','◷','orange')}</div><div class="panel"><div class="table-top"><div><div class="panel-title">Quotations</div><div class="panel-subtitle">Catalog pricing, GST, subsidy estimates and customer acceptance</div></div>${filterBar('Search customer or system...',QUOTESTATUS)}</div>${table(['Quotation','Customer','System','Capacity','Gross incl. GST','Customer after subsidy','Status','Action'],rows.map(q=>`<tr><td><strong>${esc(q.id.slice(0,12))}</strong><small>Valid until ${dateLabel(q.validUntil)}</small></td><td><strong>${esc(leadOf(q.leadId)?.customerName||'—')}</strong></td><td>${esc(q.systemType)}<small>${esc(q.productName||'Manual pricing')}</small></td><td>${fmtKw(q.capacityKw)}</td><td><strong>${money(q.price)}</strong><small>GST ${num(q.gstRate)}% · ${money(q.gstAmount)}</small></td><td><strong>${money(q.customerPayable??q.price)}</strong><small>Subsidy estimate ${money(num(q.centralSubsidy)+num(q.stateSubsidy))}</small></td><td>${tag(q.status)}</td><td><button class="cell-action" data-print-quote="${esc(q.id)}">Print →</button><button class="cell-action" data-act="edit-quotation" data-id="${esc(q.id)}">Update</button></td></tr>`).join(''))}<p class="privacy">Subsidy is an estimate only. Confirm current central/state eligibility and tax treatment before issuing a customer offer.</p></div>`}
+function renderSolarKitsPanel(){
+ const kits=visible(db.solarKits||[]);
+ return `<div class="panel"><div class="table-top"><div><div class="panel-title">Legacy solar-kit materials <span class="muted-small">(${kits.length})</span></div><div class="panel-subtitle">These records are materials-only. Configure capacity and the one customer selling price in Solar Packages & Pricing.</div></div>${canManageSolarKits()?'<button class="btn subtle" type="button" data-new-solar-kit>+ Create materials list</button>':''}</div>${kits.length?table(['Materials list','System type','Materials','Action'],kits.map(kit=>`<tr><td><strong>${esc(kit.name)}</strong></td><td>${esc(kit.systemType)}</td><td>${(kit.items||[]).length} components</td><td>${canManageSolarKits()?`<button class="cell-action" data-edit-solar-kit="${esc(kit.id)}">Update materials</button>`:'Read only'}</td></tr>`).join('')):empty('No legacy solar-kit material lists are configured.')}</div>`
+}
+function configFieldOptions(type){
+ const options={
+  status:['Draft','Active','Inactive'],
+  systemType:['On-grid','Hybrid','Off-grid'],
+  panelClassification:['','DCR','NDCR'],
+  systemCompatibility:['','On-grid','Hybrid','Both'],
+  phase:['','Single Phase','Three Phase'],
+  supplyScope:['Solar Kit Only','Solar Kit + BOS'],
+  pricingMethod:['Fixed Package Pricing','Per kWp Pricing','Capacity Slab Pricing'],
+  gstInclusion:['Exclusive','Inclusive'],
+  customerCategory:['','Residential','Commercial','Industrial','Agricultural'],
+  materialCategory:(db.materialCategories||[]).map(item=>({id:item.name,name:item.name})),
+  productCategory:['Budget','Standard','Premium'],
+  kitCategoryId:(db.kitCategories||[]).map(item=>({id:item.id,name:item.name})),
+  systemConfigurationId:(db.systemConfigurations||[]).map(item=>({id:item.id,name:item.name})),
+  structureConfigurationId:(db.structureConfigurations||[]).map(item=>({id:item.id,name:item.name})),
+  bomTemplateId:(db.bomTemplates||[]).map(item=>({id:item.id,name:item.name})),
+  customerPriceBookId:(db.customerPriceBooks||[]).map(item=>({id:item.id,name:item.name})),
+  paymentTemplateId:(db.paymentTemplates||[]).map(item=>({id:item.id,name:item.name})),
+  gstProfileId:(db.gstProfiles||[]).map(item=>({id:item.id,name:item.name}))
+ };
+ return options[type]||[];
+}
+function quotationConfigInput(record,field){
+ const [name,label,type,required]=field,value=record[name];
+ if(type==='json')return textarea(name,label,value===undefined?'[]':JSON.stringify(value,null,2));
+ if(type==='textarea')return textarea(name,label,value||'');
+ if(type==='status'||type==='systemType'||type==='panelClassification'||type==='systemCompatibility'||type==='phase'||type==='supplyScope'||type==='pricingMethod'||type==='gstInclusion'||type==='customerCategory'||type==='materialCategory'||type==='productCategory'||type==='kitCategoryId'||type==='systemConfigurationId'||type==='structureConfigurationId'||type==='bomTemplateId'||type==='customerPriceBookId'||type==='paymentTemplateId'||type==='gstProfileId'){
+  const options=configFieldOptions(type);
+  return select(name,label,options.length?options:[''],value??(type==='status'?'Draft':''),Boolean(required));
+ }
+ if(type==='boolean')return select(name,label,[{id:'false',name:'No'},{id:'true',name:'Yes'}],value===true?'true':'false');
+ const inputType=type==='number'||type==='computed'?'number':type==='date'?'date':'text';
+ const extra=type==='number'||type==='computed'?`min="0" step="0.01" ${type==='computed'?'readonly':''}`:'';
+ return input(name,label,value??'',inputType,Boolean(required),extra);
+}
+function renderQuotationConfiguration(){
+ const group=CONFIGURATION_GROUPS.find(item=>item.id===quotationConfigTab)||CONFIGURATION_GROUPS[1];
+ quotationConfigTab=group.id;
+ const tabs=CONFIGURATION_GROUPS.map(item=>`<button class="btn ${item.id===group.id?'primary':'subtle'}" type="button" data-config-tab="${item.id}">${esc(item.title)}</button>`).join('');
+ const renderModule=collection=>{
+  const module=QUOTATION_CONFIG_MODULES.find(item=>item.collection===collection),records=matching(db[collection]||[],item=>module.columns.map(field=>item[field]??'').join(' ')),canManage=canManageQuotationConfig(collection);
+  const addLabel=collection==='solarPackages'?'package':module.title.replace(/s$/,'');
+  const actions=canManage?`<button class="btn subtle" type="button" data-new-quotation-config="${collection}">+ Add ${esc(addLabel)}</button>${collection==='customerPriceBooks'?'<button class="btn subtle" type="button" data-export-pricebook>Export CSV</button><button class="btn subtle" type="button" data-pricebook-bulk>Bulk update</button><label class="btn subtle quote-logo-upload">Import CSV<input type="file" data-import-pricebook accept=".csv,text/csv"></label>':''}${collection==='solarPackages'?'<button class="btn subtle" type="button" data-export-solar-packages>Export CSV</button><label class="btn subtle quote-logo-upload">Import CSV<input type="file" data-import-solar-packages accept=".csv,text/csv"></label>':''}`:'<span class="muted-small">Read only · configuration changes are restricted by role</span>';
+  const headers=[...module.columns.map(field=>field.replace(/([a-z])([A-Z])/g,'$1 $2').replace(/^./,letter=>letter.toUpperCase())),'Action'];
+  const body=records.map(record=>`<tr>${module.columns.map(field=>`<td>${field==='status'?tag(record[field]||'Draft'):esc(Array.isArray(record[field])?record[field].length+' configured':record[field]??'—')}</td>`).join('')}<td>${canManage?`${['bomTemplates','solarPackages'].includes(collection)?`<button class="cell-action" data-clone-quotation-config="${collection}" data-id="${esc(record.id)}">Duplicate</button>`:''}<button class="cell-action" data-edit-quotation-config="${collection}" data-id="${esc(record.id)}">Update</button>`:'Read only'}</td></tr>`).join('');
+  return `<section class="panel"><div class="table-top"><div><div class="panel-title">${esc(module.title)} <span class="muted-small">(${records.length})</span></div><div class="panel-subtitle">${collection==='solarPackages'?'Each package links its capacity, materials, scope, customer price and GST for one-step quotation selection.':'Active records are available to quotation creation; draft and inactive entries are not used.'}</div></div><div class="head-actions">${actions}</div></div>${table(headers,body)}</section>`;
+ };
+ let content='';
+ if(group.id==='materialMaster')content=`<div class="info-note">Manage categories and the reusable material catalogue together. Material warranties are copied into package quotations from the master record.</div>${renderModule('materialCategories')}${renderModule('materialMaster')}`;
+ else if(group.id==='solarPackages')content=`<div class="info-note">Create a package by linking an active kit category, system capacity, structure/scope, BOM and customer price. Sales users can select the package directly; duplicate it to create another capacity or price variant. Existing detailed configuration records remain available below.</div>${renderSolarKitsPanel()}${renderModule('solarPackages')}<details class="panel"><summary class="panel-title">Advanced package components</summary><div class="info-note">Use these sections to maintain the reusable categories, system capacities, structures, materials lists and optional upgrades referenced by packages.</div>${group.modules.slice(1).map(renderModule).join('')}</details>`;
+ else if(group.id==='commercialSettings')content=`<div class="info-note">Keep tax, subsidy and payment defaults together. Confirm current statutory and scheme requirements before activating settings.</div>${group.modules.map(renderModule).join('')}`;
+ else content=`<div class="info-note">Reusable customer-facing terms and proposal defaults. Material warranty information is drawn from Material Master.</div>${renderModule('quotationTemplates')}`;
+ return `<div class="panel"><div class="panel-title">Quotation configuration</div><div class="panel-subtitle">Four focused work areas for reusable quotation data. Configuration changes are tenant-specific and included in quotation audit history.</div><div class="config-tabs">${tabs}</div></div>${content}`;
+}
+function downloadPriceBookCsv(){
+ const fields=['id',...QUOTATION_CONFIG_MODULES.find(module=>module.collection==='customerPriceBooks').fields.map(field=>field[0])];
+ const rows=(db.customerPriceBooks||[]).map(record=>fields.map(field=>Array.isArray(record[field])?JSON.stringify(record[field]):record[field]??''));
+ const csv=[fields,...rows].map(row=>row.map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+ const url=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'})),link=document.createElement('a');
+ link.href=url;link.download=`MySolarDesk_Customer_Price_Book_${today()}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),500);
+}
+function parseCsvGrid(source){
+ const rows=[];let row=[],value='',quoted=false;
+ for(let index=0;index<source.length;index++){
+  const character=source[index];
+  if(quoted&&character==='"'&&source[index+1]==='"'){value+='"';index++}
+  else if(character==='"')quoted=!quoted;
+  else if(character===','&&!quoted){row.push(value);value=''}
+  else if((character==='\n'||character==='\r')&&!quoted){if(character==='\r'&&source[index+1]==='\n')index++;row.push(value);if(row.some(cell=>cell.trim()))rows.push(row);row=[];value=''}
+  else value+=character;
+ }
+ if(quoted)throw Error('The price-book CSV contains an unclosed quoted field.');
+ if(value||row.length){row.push(value);if(row.some(cell=>cell.trim()))rows.push(row)}
+ return rows;
+}
+function openPriceBookBulkUpdate(){
+ if(!canManageQuotationConfig('customerPriceBooks')){toast('You do not have permission to change customer prices.',true);return}
+ const active=(db.customerPriceBooks||[]).filter(record=>record.status==='Active');
+ if(!active.length){toast('There are no active customer prices to update.',true);return}
+ openModal('Bulk update customer prices',`This creates ${active.length} new effective-dated price entries and preserves the current prices in audit history.`,`${select('operation','Update method',['Fixed amount','Percentage'], 'Percentage')}${input('adjustment','Adjustment value',0,'number',true,'step="0.01"')}`,async values=>{
+  const amount=Number(values.adjustment);if(!Number.isFinite(amount))throw Error('Enter a valid price adjustment.');
+  const updates=active.map(record=>{
+   const next={...record};
+   const adjust=value=>Math.round((num(value)+(values.operation==='Percentage'?num(value)*amount/100:amount)+Number.EPSILON)*100)/100;
+   if(record.pricingMethod==='Fixed Package Pricing')next.customerSellingPrice=adjust(record.customerSellingPrice);
+   else if(record.pricingMethod==='Per kWp Pricing')next.pricePerKw=adjust(record.pricePerKw);
+   else next.capacitySlabs=(record.capacitySlabs||[]).map(slab=>({...slab,pricePerKw:adjust(slab.pricePerKw)}));
+   const rates=record.pricingMethod==='Fixed Package Pricing'?[next.customerSellingPrice]:record.pricingMethod==='Per kWp Pricing'?[next.pricePerKw]:(next.capacitySlabs||[]).map(slab=>slab.pricePerKw);
+   if(rates.some(rate=>!Number.isFinite(rate)||rate<=0))throw Error(`The adjustment would make ${record.name} invalid; no prices were changed.`);
+   return {record,next}
+  });
+  const startsOn=isoOffset(1);
+  for(const {record,next} of updates){
+   const closed={...record,status:'Inactive',effectiveTo:today(),updatedAt:stamp(),updatedBy:uid()};
+   await writeRecord('customerPriceBooks',closed,record.id);
+   delete next.id;
+   next.effectiveFrom=startsOn;
+   next.effectiveTo=record.effectiveTo&&record.effectiveTo>today()?record.effectiveTo:'';
+   next.createdAt=stamp();next.createdBy=uid();next.updatedAt=stamp();next.updatedBy=uid();
+   await writeRecord('customerPriceBooks',next);
+  }
+ });
+}
+async function importPriceBookCsv(file){
+ if(!canManageQuotationConfig('customerPriceBooks'))throw Error('You do not have permission to import customer prices.');
+ if(!file||file.size>2*1024*1024)throw Error('Choose a customer price CSV smaller than 2 MB.');
+ const rows=parseCsvGrid(await file.text()),headers=(rows.shift()||[]).map(value=>value.trim());
+ if(!headers.includes('name')||!headers.includes('pricingMethod')||!headers.includes('kitCategoryId')||!headers.includes('systemConfigurationId'))throw Error('CSV headers must include name, pricingMethod, kitCategoryId and systemConfigurationId.');
+ if(!rows.length||rows.length>250)throw Error('Import between 1 and 250 price rows at a time.');
+ const fields=QUOTATION_CONFIG_MODULES.find(module=>module.collection==='customerPriceBooks').fields;
+ const records=rows.map(row=>{
+  const values=Object.fromEntries(headers.map((header,index)=>[header,row[index]||''])),record={};
+  for(const [name,,type] of fields){
+   if(type==='json'){try{record[name]=JSON.parse(values[name]||'[]')}catch{throw Error(`Invalid JSON in ${name} for ${values.name||'a price row'}.`)}}
+   else if(type==='number')record[name]=values[name]===''?'':Number(values[name]);
+   else record[name]=String(values[name]||'').trim();
+  }
+  record.status=record.status||'Draft';
+  return {id:values.id||'',record:validateQuotationConfiguration('customerPriceBooks',record,values.id||'')};
+ });
+ const preview=records.slice(0,8).map(item=>`${item.record.name} · ${item.record.pricingMethod} · ${item.record.status}`).join('\n');
+ openModal('Review customer price import',`${records.length} rows validated. Confirm to import; existing IDs will be updated.`,`${textarea('importPreview','Validated price entries',preview)}<p class="full muted-small">The preview shows the first eight entries. Import is limited to 250 rows per batch.</p>`,async()=>{
+  let saved=0;
+  try{for(const item of records){item.record.shared=true;item.record.assignedTo=uid();item.record.updatedAt=stamp();item.record.updatedBy=uid();if(!item.id){item.record.createdAt=stamp();item.record.createdBy=uid()}await writeRecord('customerPriceBooks',item.record,item.id||'');saved++}}
+  catch(error){throw Error(`Import stopped after ${saved} of ${records.length} entries. ${error.message||error}`)}
+ });
+}
+function downloadSolarPackagesCsv(){
+ const fields=['id',...QUOTATION_CONFIG_MODULES.find(module=>module.collection==='solarPackages').fields.map(field=>field[0])],rows=(db.solarPackages||[]).map(record=>fields.map(field=>record[field]??''));
+ const csv=[fields,...rows].map(row=>row.map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(',')).join('\r\n'),url=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'})),link=document.createElement('a');
+ link.href=url;link.download=`MySolarDesk_Solar_Packages_${today()}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),500)
+}
+async function importSolarPackagesCsv(file){
+ if(!canManageQuotationConfig('solarPackages'))throw Error('Only authorized managers can import solar packages.');
+ if(!file||file.size>2*1024*1024)throw Error('Choose a solar package CSV smaller than 2 MB.');
+ const rows=parseCsvGrid(await file.text()),headers=(rows.shift()||[]).map(value=>value.trim()),required=['name','kitCategoryId','systemConfigurationId','structureConfigurationId','bomTemplateId','customerSellingPrice','gstProfileId','gstInclusion'];
+ if(required.some(header=>!headers.includes(header)))throw Error(`CSV headers must include ${required.join(', ')}.`);
+ if(!rows.length||rows.length>250)throw Error('Import between 1 and 250 solar packages at a time.');
+ const records=rows.map(row=>{
+  const values=Object.fromEntries(headers.map((header,index)=>[header,row[index]||''])),record={};
+  for(const [name,,type] of QUOTATION_CONFIG_MODULES.find(module=>module.collection==='solarPackages').fields){
+   if(type==='number')record[name]=values[name]===''?'':num(values[name]);
+   else record[name]=String(values[name]||'').trim();
+  }
+  record.status=record.status||'Draft';
+  const id=values.id||'',existing=db.solarPackages.find(item=>item.id===id);
+  if(existing&&existing.status!=='Draft'){
+   const lockedFields=['kitCategoryId','systemConfigurationId','structureConfigurationId','bomTemplateId','customerSellingPrice','gstProfileId','gstInclusion','effectiveFrom'];
+   if(lockedFields.some(field=>JSON.stringify(record[field]??'')!==JSON.stringify(existing[field]??'')))throw Error(`Package ${existing.name} has already been activated. Duplicate it to create a new effective-dated version; only status and end date may be updated.`);
+  }
+  return{id,record:validateQuotationConfiguration('solarPackages',record,id)}
+ });
+ const preview=records.slice(0,8).map(item=>`${item.record.name} · ${money(item.record.customerSellingPrice)} · ${item.record.status}`).join('\n');
+ openModal('Review solar package import',`${records.length} rows validated. Confirm to import; existing IDs will be updated. Linked BOMs, systems, structures and GST profiles must already exist.`,`${textarea('packageImportPreview','Validated package entries',preview)}<p class="full muted-small">The preview shows the first eight entries. Import is limited to 250 rows per batch.</p>`,async()=>{
+  let saved=0;
+  try{for(const item of records){item.record.shared=true;item.record.assignedTo=uid();item.record.updatedAt=stamp();item.record.updatedBy=uid();if(!item.id){item.record.createdAt=stamp();item.record.createdBy=uid()}await writeRecord('solarPackages',item.record,item.id);saved++}}
+  catch(error){throw Error(`Import stopped after ${saved} of ${records.length} packages. ${error.message||error}`)}
+ });
+}
+function configDuplicatePriceExists(record,existingId){
+ const keys=['kitCategoryId','systemConfigurationId','systemType','panelClassification','phase','batteryConfiguration','structureConfigurationId','supplyScope'];
+ const start=record.effectiveFrom||'',end=record.effectiveTo||'9999-12-31';
+ return (db.customerPriceBooks||[]).some(other=>other.id!==existingId&&other.status==='Active'&&record.status==='Active'
+  &&keys.every(key=>String(other[key]||'')===String(record[key]||''))
+  &&(other.effectiveTo||'9999-12-31')>=start&&(record.effectiveTo||'9999-12-31')>=(other.effectiveFrom||''));
+}
+function validateQuotationConfiguration(collection,record,existingId){
+  if(collection==='materialMaster'){
+   record.productCategory=['Solar PV Module','On-grid Inverter','Hybrid Inverter'].includes(record.materialCategory)
+    ?(['Budget','Standard','Premium'].includes(record.productCategory)?record.productCategory:'Standard')
+    :'Standard';
+  }
+ if(collection==='systemConfigurations'){
+  if(num(record.nominalCapacityKw)<=0||num(record.panelWattageWp)<=0||!Number.isInteger(num(record.panelQuantity))||num(record.panelQuantity)<=0||num(record.inverterCapacityKw)<=0||!Number.isInteger(num(record.inverterQuantity))||num(record.inverterQuantity)<=0)throw Error('System configurations need positive capacities and whole panel/inverter quantities.');
+  if(record.systemType==='On-grid'&&num(record.batteryQuantity)>0)throw Error('On-grid-only systems cannot include battery configurations.');
+  const actual=Math.round((num(record.panelWattageWp)*num(record.panelQuantity)/1000+Number.EPSILON)*1000)/1000;
+  if(record.actualSolarCapacityKw&&Math.abs(num(record.actualSolarCapacityKw)-actual)>0.001)throw Error('Actual solar capacity must equal panel wattage × panel quantity ÷ 1000.');
+  record.actualSolarCapacityKw=actual;
+ }
+ if(collection==='bomTemplates'){
+  if(!Array.isArray(record.items)||!record.items.length)throw Error('Add at least one BOM item.');
+  const ids=new Set();
+  for(const item of record.items){
+   if(!item.id||!item.materialId||ids.has(item.id))throw Error('Each BOM row needs a unique row ID and a material ID.');
+   ids.add(item.id);
+   if(!['Fixed','Formula','Design','User Input'].includes(item.quantityMode))throw Error('Choose a supported BOM quantity mode for each item.');
+   if(item.mandatory!==false&&!item.quantityMode)throw Error('Mandatory BOM items need a quantity mode.');
+  }
+ }
+ if(collection==='customerPriceBooks'){
+  if(!record.kitCategoryId||!record.systemConfigurationId||!record.systemType||!record.phase||!record.supplyScope)throw Error('Price books must specify a kit category, system configuration, system type, phase and supply scope.');
+  if(record.pricingMethod==='Fixed Package Pricing'&&num(record.customerSellingPrice)<=0)throw Error('Enter a positive fixed customer selling price.');
+  if(record.pricingMethod==='Per kWp Pricing'&&num(record.pricePerKw)<=0)throw Error('Enter a positive customer price per kWp.');
+  if(record.pricingMethod==='Capacity Slab Pricing'){
+   if(!Array.isArray(record.capacitySlabs)||!record.capacitySlabs.length)throw Error('Add at least one capacity price slab.');
+   const slabs=record.capacitySlabs.slice().sort((a,b)=>num(a.minimumKw)-num(b.minimumKw));
+   for(let index=0;index<slabs.length;index++)if(num(slabs[index].minimumKw)<=0||num(slabs[index].maximumKw)<num(slabs[index].minimumKw)||num(slabs[index].pricePerKw)<=0||index&&num(slabs[index].minimumKw)<=num(slabs[index-1].maximumKw))throw Error('Capacity slabs need positive, non-overlapping ranges and per-kWp rates.');
+   record.capacitySlabs=slabs;
+  }
+  if(!record.gstProfileId)throw Error('Select a GST profile for this customer price.');
+  if(record.effectiveTo&&record.effectiveFrom&&record.effectiveTo<record.effectiveFrom)throw Error('Price-book end date cannot be before its start date.');
+  if(record.status==='Active'&&!db.gstProfiles.some(profile=>profile.id===record.gstProfileId&&profile.status==='Active'))throw Error('Activate the selected GST profile before activating this customer price.');
+  if(configDuplicatePriceExists(record,existingId))throw Error('An active price with the same configuration and overlapping effective dates already exists.');
+ }
+ if(collection==='solarPackages'){
+  const category=db.kitCategories.find(item=>item.id===record.kitCategoryId),system=db.systemConfigurations.find(item=>item.id===record.systemConfigurationId),structure=db.structureConfigurations.find(item=>item.id===record.structureConfigurationId),template=db.bomTemplates.find(item=>item.id===record.bomTemplateId),gstProfile=db.gstProfiles.find(item=>item.id===record.gstProfileId);
+  if(!category||!system||!structure||!template||!gstProfile)throw Error('Select an existing kit category, system, structure, BOM and GST profile for this package.');
+  if(system.systemType!==template.systemType||system.id!==template.systemConfigurationId||category.id!==template.kitCategoryId||structure.id!==template.structureConfigurationId||system.panelClassification!==template.panelClassification||system.phase!==template.phase||structure.supplyScope!==template.supplyScope)throw Error('The package category, system, structure and BOM must describe the same configuration.');
+  if(!Number.isFinite(num(record.customerSellingPrice))||num(record.customerSellingPrice)<=0)throw Error('Enter a customer selling price greater than zero.');
+  if(!['Inclusive','Exclusive'].includes(record.gstInclusion))throw Error('Choose whether the customer selling price includes GST.');
+  if(record.status==='Active'&&[category,system,structure,template,gstProfile].some(item=>item.status!=='Active'))throw Error('Activate all linked package components and GST profile before activating this package.');
+  if(record.effectiveTo&&record.effectiveFrom&&record.effectiveTo<record.effectiveFrom)throw Error('Package end date cannot be before its start date.');
+  const overlaps=(db.solarPackages||[]).some(other=>other.id!==existingId&&other.status==='Active'&&record.status==='Active'
+   &&other.kitCategoryId===record.kitCategoryId&&other.systemConfigurationId===record.systemConfigurationId&&other.structureConfigurationId===record.structureConfigurationId
+   &&(other.effectiveTo||'9999-12-31')>=(record.effectiveFrom||'')&&(record.effectiveTo||'9999-12-31')>=(other.effectiveFrom||''));
+  if(overlaps)throw Error('An active package with the same kit, capacity and structure already exists for overlapping dates. Duplicate or update that package instead.');
+  record.systemType=system.systemType;record.nominalCapacityKw=num(system.nominalCapacityKw);record.actualSolarCapacityKw=num(system.actualSolarCapacityKw);
+  record.panelClassification=system.panelClassification;record.phase=system.phase;record.batteryConfiguration=batteryConfigurationForSystem(system);
+  record.structureName=structure.name;record.supplyScope=structure.supplyScope;
+  if(record.status==='Active'&&!db.gstProfiles.some(profile=>profile.id===record.gstProfileId&&profile.status==='Active'))throw Error('Activate the selected GST profile before activating this package.');
+ }
+ if(collection==='gstProfiles'){
+  effectiveGstRate(record);
+  if(record.effectiveTo&&record.effectiveFrom&&record.effectiveTo<record.effectiveFrom)throw Error('GST profile end date cannot be before its start date.');
+ }
+ if(collection==='subsidyConfigurations'){
+  if(record.maximumCapacityKw&&num(record.maximumCapacityKw)<num(record.minimumCapacityKw))throw Error('Maximum subsidy capacity cannot be less than the minimum capacity.');
+  if(num(record.maximumSubsidy)<0||num(record.subsidyAmount)<0)throw Error('Subsidy values cannot be negative.');
+ }
+ if(collection==='paymentTemplates')validateMilestones(record.milestones);
+ if(collection==='optionalUpgrades'){
+  if(num(record.customerUnitPrice)<0||num(record.quantity)<=0)throw Error('Optional upgrades need a non-negative unit price and positive quantity.');
+  if(!Number.isFinite(num(record.gstRate))||num(record.gstRate)<0||num(record.gstRate)>100)throw Error('Enter a valid GST rate from 0% to 100% for the upgrade.');
+  if(!Array.isArray(record.compatibleConfigurations))throw Error('Compatible system configurations must be a JSON array.');
+ }
+ return record;
+}
+function openQuotationConfigRecord(collection,existing,clone=false){
+ const module=QUOTATION_CONFIG_MODULES.find(item=>item.collection===collection);
+ if(!module||!canManageQuotationConfig(collection)){toast('You do not have permission to change this quotation configuration.',true);return}
+ const source=clone?{...existing,name:`${existing?.name||'Configuration'} copy`,status:'Draft'}:existing||{};
+ const fields=module.fields.map(field=>quotationConfigInput(source,field)).join('');
+ openModal(`${clone?'Clone':existing?'Update':'Create'} ${module.title}`,`Changes are saved to this company and included in quotation audit history.`,fields,async values=>{
+  const record={...(clone?{}:source)};
+  for(const [name,,type] of module.fields){
+   if(type==='json'){
+    try{record[name]=JSON.parse(values[name]||'[]')}catch{throw Error(`${name} must contain valid JSON.`)}
+   }else if(type==='boolean')record[name]=values[name]==='true';
+   else if(type==='number')record[name]=values[name]===''?'':num(values[name]);
+   else record[name]=String(values[name]??'').trim();
+  }
+  if(collection==='materialMaster'){
+   record.productCategory=['Solar PV Module','On-grid Inverter','Hybrid Inverter'].includes(record.materialCategory)
+    ?(['Budget','Standard','Premium'].includes(record.productCategory)?record.productCategory:'Standard')
+    :'Standard';
+  }
+  if(module.fields.some(([name,,type,required])=>required&&type!=='json'&&!String(record[name]??'').trim()))throw Error('Complete all required configuration fields.');
+  if(collection==='customerPriceBooks'&&existing?.status==='Active'){
+   const lockedFields=['name','kitCategoryId','systemConfigurationId','systemType','panelClassification','phase','batteryConfiguration','structureConfigurationId','supplyScope','pricingMethod','customerSellingPrice','pricePerKw','capacitySlabs','gstProfileId','gstInclusion','effectiveFrom'];
+   if(lockedFields.some(field=>JSON.stringify(record[field]??'')!==JSON.stringify(existing[field]??'')))throw Error('Active customer prices are immutable. Clone the entry to create a new effective-dated price; only status and end date may be updated.');
+  }
+  if(collection==='solarPackages'&&!clone&&existing&&existing.status!=='Draft'){
+   const lockedFields=['kitCategoryId','systemConfigurationId','structureConfigurationId','bomTemplateId','customerSellingPrice','gstProfileId','gstInclusion','effectiveFrom'];
+   if(lockedFields.some(field=>JSON.stringify(record[field]??'')!==JSON.stringify(existing[field]??'')))throw Error('Package pricing and configuration are immutable after activation. Duplicate the package to create a new effective-dated version; only status and end date may be updated.');
+  }
+  validateQuotationConfiguration(collection,record,clone?'':existing?.id);
+  record.shared=true;record.assignedTo=uid();record.updatedAt=stamp();record.updatedBy=uid();
+  if(!existing||clone){record.createdAt=stamp();record.createdBy=uid()}
+  await writeRecord(collection,record,clone?'':existing?.id);
+ },existing&&!clone?{recordType:'quotationConfig',recordId:existing.id}:null)
+ if(collection==='systemConfigurations'){
+  const root=$('#modal-root'),wattage=root.querySelector('[name="panelWattageWp"]'),quantity=root.querySelector('[name="panelQuantity"]'),actual=root.querySelector('[name="actualSolarCapacityKw"]');
+  const updateActualCapacity=()=>{actual.value=num(wattage.value)>0&&num(quantity.value)>0?(num(wattage.value)*num(quantity.value)/1000).toFixed(3):''};
+  wattage.addEventListener('input',updateActualCapacity);quantity.addEventListener('input',updateActualCapacity);updateActualCapacity();
+ }
+}
+function renderQuotes(){let rows=matching(visible(db.quotations),q=>[leadOf(q.leadId)?.customerName,q.systemType,q.status==='Accepted'?'Confirmed':q.status,q.productName,personOf(q.assignedTo)].join(' '));const total=rows.reduce((s,q)=>s+num(q.price),0),catalogPanel=`<div class="panel"><div class="table-top"><div><div class="panel-title">Product catalog <span class="muted-small">(${db.catalog.length})</span></div><div class="panel-subtitle">Shared product rates are available in every plan; stock tracking is Scale-only.</div></div>${businessManager()?'<button class="btn subtle" type="button" data-new-catalog>+ Add catalog item</button>':''}</div>${db.catalog.length?table(['Product','Category','Brand','Unit rate','GST','Action'],db.catalog.map(item=>`<tr><td><strong>${esc(item.name)}</strong></td><td>${esc(item.category||'—')}</td><td>${esc(item.brand||'—')}</td><td>${money(item.unitRate)} / ${esc(item.unit||'unit')}</td><td>${num(item.gstRate)}%</td><td>${businessManager()?`<button class="cell-action" data-edit-catalog="${esc(item.id)}">Update</button>`:'Read only'}</td></tr>`).join('')):empty('No catalog products yet. Ask the Business Manager to add products.')}</div>`;return `${renderQuotationBranding()}${catalogPanel}<div class="stat-grid">${displayCard('Quotes created',String(rows.length),'All proposals','▤','blue')}${displayCard('Total quoted',money(total),'GST included where configured','₹','green')}${displayCard('Confirmed',String(rows.filter(q=>q.status==='Accepted').length),'Customer-approved proposals','✓','violet')}${displayCard('Awaiting reply',String(rows.filter(q=>['Sent','Revised'].includes(q.status)).length),'Sent or revised proposals','◷','orange')}</div><div class="panel"><div class="table-top"><div><div class="panel-title">Quotations</div><div class="panel-subtitle">Solar package pricing, GST and subsidy estimates</div></div>${filterBar('Search customer or system...',QUOTESTATUS)}</div>${table(['Quotation','Customer','System','Capacity','Gross incl. GST','Customer after subsidy','Status','Action'],rows.map(q=>`<tr><td><strong>${esc(q.id.slice(0,12))}</strong><small>Valid until ${dateLabel(q.validUntil)}</small></td><td><strong>${esc(leadOf(q.leadId)?.customerName||'—')}</strong></td><td>${esc(q.systemType)}<small>${esc(q.productName||'Manual pricing')}</small></td><td>${fmtKw(q.capacityKw)}</td><td><strong>${money(q.price)}</strong><small>GST ${num(q.gstRate)}% · ${money(q.gstAmount)}</small></td><td><strong>${money(q.customerPayable??q.price)}</strong><small>Subsidy estimate ${money(num(q.centralSubsidy)+num(q.stateSubsidy))}</small></td><td>${tag(q.status==='Accepted'?'Confirmed':q.status)}</td><td><button class="cell-action" data-print-quote="${esc(q.id)}">Print →</button><button class="cell-action" data-act="edit-quotation" data-id="${esc(q.id)}">Update</button></td></tr>`).join(''))}<p class="privacy">Subsidy is an estimate only. Confirm current central/state eligibility and tax treatment before issuing a customer offer.</p></div>`}
 function progress(project){if(project&&Array.isArray(project.milestones))return Math.round(project.milestones.filter(item=>item.status==='Completed').length/INSTALLSTATUS.length*100);const stage=INSTALLSTATUS.indexOf(typeof project==='string'?project:project?.status);return Math.round((Math.max(0,stage)+1)/INSTALLSTATUS.length*100)}
 function renderInstallations(){let rows=matching(visible(db.installations),p=>[leadOf(p.leadId)?.customerName,p.installer,p.status].join(' '));return `<div class="stat-grid">${displayCard('Total projects',String(rows.length),'Confirmed installations','▧','blue')}${displayCard('Capacity booked',fmtKw(rows.reduce((s,p)=>s+num(p.capacityKw),0)),'Combined solar capacity','☀','green')}${displayCard('Commissioned',String(rows.filter(p=>p.status==='Handover').length),'Ready or delivered','✓','violet')}${displayCard('In progress',String(rows.filter(p=>p.status!=='Handover').length),'Active installation jobs','◷','orange')}</div><div class="panel"><div class="table-top"><div><div class="panel-title">Project delivery tracker</div><div class="panel-subtitle">Ten milestones from material procurement to customer handover</div></div>${filterBar('Search projects...',INSTALLSTATUS,'All phases')}</div>${table(['Project','Capacity','EPC / Installer','Target date','Progress','Stage','Action'],rows.map(p=>{const lead=leadOf(p.leadId);return `<tr><td><strong>${esc(lead?.customerName||'—')}</strong><small>${esc(lead?.city||'')}</small><small>${phoneLink(lead?.phone)}</small></td><td>${fmtKw(p.capacityKw)}</td><td>${esc(p.installer||'Not assigned')}</td><td>${dateLabel(p.targetDate)}</td><td><span class="progress-track"><i style="width:${progress(p)}%"></i></span>${progress(p)}%</td><td>${tag(p.status)}</td><td><button class="cell-action" data-act="edit-installation" data-id="${esc(p.id)}">Update →</button></td></tr>`}).join(''))}</div>`}
 function invoicePaid(invoice){return (db.payments||[]).filter(payment=>payment.invoiceId===invoice.id&&['Verified','Received','Disbursed'].includes(normalizePaymentStatus(payment.status))).reduce((sum,payment)=>sum+num(payment.totalAmount??num(payment.amount)+num(payment.gstAmount)),0)}
 function invoiceCredits(invoice){return (db.creditNotes||[]).filter(note=>note.invoiceId===invoice.id&&note.status==='Issued').reduce((sum,note)=>sum+num(note.totalAmount),0)}
 function invoiceStatus(invoice){return getInvoiceStatus({...invoice,totalAmount:Math.max(0,num(invoice.totalAmount)-invoiceCredits(invoice))},db.payments,today())}
 function invoiceOutstanding(invoice){return Math.max(0,num(invoice.totalAmount)-invoiceCredits(invoice)-invoicePaid(invoice))}
+function orderedConfirmedPayments(payments){
+ return payments.filter(payment=>['Verified','Received','Disbursed'].includes(normalizePaymentStatus(payment.status))).slice().sort((a,b)=>`${a.paymentDate||''}|${a.verifiedAt||a.createdAt||a.updatedAt||''}|${a.id||''}`.localeCompare(`${b.paymentDate||''}|${b.verifiedAt||b.createdAt||b.updatedAt||''}|${b.id||''}`))
+}
+function paidThroughReceipt(receipt,invoice){
+ const payments=orderedConfirmedPayments(invoice?(db.payments||[]).filter(payment=>payment.invoiceId===invoice.id):verifiedPaymentsForLead(receipt.leadId)),receiptIndex=payments.findIndex(payment=>payment.id===receipt.paymentId),paymentsThroughReceipt=receiptIndex<0?payments:payments.slice(0,receiptIndex+1);
+ return paymentsThroughReceipt.reduce((sum,payment)=>sum+num(payment.totalAmount??num(payment.amount)+num(payment.gstAmount)),0)
+}
+function nextInvoiceReceiptNumber(invoice){
+ const reference=invoice.invoiceNo||invoice.id,prefix=`${reference}-R`,receipts=(db.paymentReceipts||[]).filter(receipt=>receipt.invoiceId===invoice.id||receipt.invoiceNo===invoice.invoiceNo&&receipt.leadId===invoice.leadId),lastSequence=receipts.reduce((last,receipt)=>{const value=String(receipt.receiptNo||'');if(!value.startsWith(prefix))return last;const sequence=Number(value.slice(prefix.length));return Number.isInteger(sequence)?Math.max(last,sequence):last},0),sequence=Math.max(receipts.length,lastSequence)+1;
+ return `${prefix}${String(sequence).padStart(2,'0')}`
+}
 function canManageFinance(){return businessManager()||salesManager()}
 async function ensureProjectPaymentMilestones(leadId,projectId){
  const lead=leadOf(leadId),contract=contractValueForLead(leadId);if(!planHasFeature('payments')||!elevated()||!lead||contract<=0||db.paymentMilestones.some(item=>item.projectId===projectId))return;
- const settings=db.invoiceSettings||defaultInvoiceSettings();
- for(const [index,milestone] of (settings.milestones||DEFAULT_PAYMENT_MILESTONES).entries()){
-  const record={projectId,leadId,assignedTo:lead.assignedTo,name:milestone.name,trigger:milestone.trigger,percent:num(milestone.percent),amount:Math.round(contract*num(milestone.percent))/100,status:'Pending',sequence:index+1,createdAt:stamp(),createdBy:uid()};
+ const settings=db.invoiceSettings||defaultInvoiceSettings(),quote=db.quotations.filter(item=>item.leadId===leadId&&item.status==='Accepted').sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0],milestones=quote?.paymentPlan?.length?quote.paymentPlan:settings.milestones||DEFAULT_PAYMENT_MILESTONES;
+ for(const [index,milestone] of milestones.entries()){
+  const record={projectId,leadId,assignedTo:lead.assignedTo,name:milestone.name,trigger:milestone.trigger||milestone.name,percent:num(milestone.percent),amount:num(milestone.amount)||Math.round(contract*num(milestone.percent))/100,status:'Pending',sequence:index+1,createdAt:stamp(),createdBy:uid()};
   await writeRecord('paymentMilestones',record)
  }
 }
@@ -627,9 +1051,9 @@ function choiceLeads(onlyWon=false){return visible(db.leads).filter(l=>!onlyWon|
 function assignees(current){return select('assignedTo','Assigned salesperson',db.users.filter(u=>u.active&&['sales_executive','sales_manager'].includes(u.role)).map(u=>({id:u.id,name:u.name})),current||defaultRecordAssignee())}
 function historyPanelMarkup(recordType,recordId){const entries=db.history.filter(x=>x.recordType===recordType&&x.recordId===recordId).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));return `<section class="record-history"><div class="record-history-heading"><h3>History</h3><span>Read-only timeline</span></div><div class="history-list">${entries.length?entries.map(x=>`<article class="history-entry"><div class="history-entry-top"><strong>${esc(x.event||'Comment added')}</strong><time>${esc(x.createdAt?new Date(x.createdAt).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}):'')}</time></div><div class="history-author">${esc(x.actorName||'Team member')}</div>${Object.prototype.hasOwnProperty.call(x,'newValue')?`<div class="history-change"><div><span>Previous · ${esc(x.fieldLabel||'Value')}</span><p>${esc(x.previousValue||'(empty)')}</p></div><div><span>Updated · ${esc(x.fieldLabel||'Value')}</span><p>${esc(x.newValue||'(empty)')}</p></div></div>`:''}${x.comment?`<p>${esc(x.comment)}</p>`:''}</article>`).join(''):'<div class="empty">No history yet.</div>'}</div><div class="record-history-compose"><label for="record-history-comment">Add a comment</label><textarea id="record-history-comment" maxlength="2000" placeholder="Record a conversation or update..."></textarea><button type="button" class="btn subtle" data-add-history>Add comment</button></div></section>`}
 function bindRecordHistory(root,recordMeta){const button=root.querySelector('[data-add-history]');if(!button)return;button.addEventListener('click',async()=>{const textarea=root.querySelector('#record-history-comment'),comment=textarea.value.trim();if(!comment)return;button.disabled=true;try{await createHistory({...recordMeta,event:'Comment added',comment});if(!isDemo)await fetchRecords();root.querySelector('.record-history').outerHTML=historyPanelMarkup(recordMeta.recordType,recordMeta.recordId);bindRecordHistory(root,recordMeta);toast('Comment added to history')}catch(err){loginError(err)}finally{const nextButton=root.querySelector('[data-add-history]');if(nextButton)nextButton.disabled=false}})}
-function openModal(title,subtitle,fields,onSave,recordMeta){
+function openModal(title,subtitle,fields,onSave,recordMeta,submitLabel='Save record →'){
  const root=$('#modal-root');
- root.innerHTML=`<div class="modal-layer"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="modal-header"><div><h2>${esc(title)}</h2><p>${esc(subtitle)}</p></div><button class="icon-btn" id="close-modal" aria-label="Close">✕</button></div><form id="modal-form" style="display:contents"><div class="modal-body"><div class="form-grid">${fields}</div>${recordMeta?historyPanelMarkup(recordMeta.recordType,recordMeta.recordId):''}</div><div class="modal-foot"><button type="button" class="btn subtle" id="cancel-modal">Cancel</button><button id="save-modal" type="submit" class="btn primary">Save record →</button></div></form></div></div>`;
+ root.innerHTML=`<div class="modal-layer"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="modal-header"><div><h2>${esc(title)}</h2><p>${esc(subtitle)}</p></div><button class="icon-btn" id="close-modal" aria-label="Close">✕</button></div><form id="modal-form" style="display:contents"><div class="modal-body"><div class="form-grid">${fields}</div>${recordMeta?historyPanelMarkup(recordMeta.recordType,recordMeta.recordId):''}</div><div class="modal-foot"><button type="button" class="btn subtle" id="cancel-modal">Cancel</button><button id="save-modal" type="submit" class="btn primary">${esc(submitLabel)}</button></div></form></div></div>`;
  root.querySelector('.modal-layer').addEventListener('click',e=>{if(e.target.classList.contains('modal-layer'))closeModal()});
  $('#close-modal').onclick=closeModal;$('#cancel-modal').onclick=closeModal;
  $('#modal-form').addEventListener('submit',async e=>{
@@ -649,25 +1073,97 @@ function openModal(title,subtitle,fields,onSave,recordMeta){
   const lines=JSON.parse(lineItemsField.value||'[]'),list=root.querySelector('[data-quote-lines]');
   const renderLines=()=>{
    lineItemsField.value=JSON.stringify(lines);
-   list.innerHTML=lines.length?`<div class="quote-line-list">${lines.map((item,index)=>`<div class="quote-line-row"><strong>${esc(item.productName)}</strong><span>${num(item.quantity)} × ${money(item.unitPrice)}</span><span>GST ${num(item.gstRate)}%</span><strong>${money(num(item.quantity)*num(item.unitPrice)*(1+num(item.gstRate)/100))}</strong><button class="cell-action" type="button" data-remove-quote-line="${index}" aria-label="Remove ${esc(item.productName)}">Remove</button></div>`).join('')}</div>`:'<p class="info-note">Add one or more catalog products to calculate the project quote.</p>'
+   list.innerHTML=lines.length?`<div class="quote-line-list">${lines.map((item,index)=>`<div class="quote-line-row"><strong>${esc(item.productName)}${item.unit?`<small>${esc(item.unit)}</small>`:''}${item.components?.length?`<small class="quote-line-components">${esc(item.components.map(solarKitComponentSummary).join('\n'))}</small>`:''}</strong><label>Qty<input type="number" min="0.01" step="0.01" data-quote-line-index="${index}" data-quote-line-field="quantity" value="${esc(item.quantity)}"></label><strong data-quote-line-total="${index}">${money(num(item.quantity)*num(item.unitPrice))}</strong><button class="cell-action" type="button" data-remove-quote-line="${index}" aria-label="Remove ${esc(item.productName)}">Remove</button></div>`).join('')}</div>`:'<p class="info-note">Apply a solar kit or add one or more catalog products to calculate the project quote.</p>'
   };
-  const productPick=root.querySelector('[name="quoteProductPick"]');
-  productPick.addEventListener('change',()=>{
-   const product=db.catalog.find(item=>item.id===productPick.value);if(!product)return;
-   root.querySelector('[name="quoteUnitPrice"]').value=product.unitRate;
-   root.querySelector('[name="quoteGstRate"]').value=String(DEFAULT_GST_RATE)
+  list.addEventListener('input',event=>{
+   const control=event.target.closest('[data-quote-line-field]');if(!control)return;
+   const index=Number(control.dataset.quoteLineIndex),field=control.dataset.quoteLineField;
+   lines[index][field]=num(control.value);lineItemsField.value=JSON.stringify(lines);
+   const item=lines[index],total=list.querySelector(`[data-quote-line-total="${index}"]`);
+   if(total)total.textContent=money(num(item.quantity)*num(item.unitPrice))
   });
+  const productPick=root.querySelector('[name="quoteProductPick"]');
   root.querySelector('[data-quote-add]').addEventListener('click',()=>{
-   const product=db.catalog.find(item=>item.id===productPick.value),quantity=num(root.querySelector('[name="quoteQuantity"]').value),unitPrice=num(root.querySelector('[name="quoteUnitPrice"]').value);
-   if(quantity<=0||unitPrice<=0){toast('Enter a positive quantity and unit rate before adding a quotation item.',true);return}
-   lines.push({productId:product?.id||'',productName:product?.name||'Solar project item',quantity,unitPrice,gstRate:num(root.querySelector('[name="quoteGstRate"]').value)});
+   const product=db.catalog.find(item=>item.id===productPick.value),quantity=num(root.querySelector('[name="quoteQuantity"]').value),unitPrice=num(product?.unitRate);
+   if(!product||quantity<=0||unitPrice<=0){toast('Select a catalog product with a positive unit rate and enter a positive quantity, or apply a solar kit.',true);return}
+   lines.push({productId:product.id,productName:product.name,quantity,unit:product.unit||'',unitPrice});
    renderLines()
   });
   list.addEventListener('click',event=>{
    const remove=event.target.closest('[data-remove-quote-line]');if(!remove)return;
    lines.splice(Number(remove.dataset.removeQuoteLine),1);renderLines()
   });
-  renderLines()
+  const packagePick=root.querySelector("[name=solarPackageId]"),solarPackages=activeSolarPackages();
+    const categoryPick=root.querySelector('[name="kitCategoryId"]'),systemTypePick=root.querySelector('[name="systemType"]'),panelPick=root.querySelector('[name="panelClassification"]'),systemConfigPick=root.querySelector('[name="systemConfigurationId"]'),capacityField=root.querySelector('[name="capacityKw"]'),phasePick=root.querySelector('[name="phase"]'),structurePick=root.querySelector('[name="structureConfigurationId"]'),batteryPick=root.querySelector('[name="batteryConfiguration"]'),bomPick=root.querySelector('[name="bomTemplateId"]'),bomUserField=root.querySelector('[name="bomUserQuantities"]'),configPreview=root.querySelector('[data-configured-quote-preview]'),quotationPriceField=root.querySelector('[name="quotationPrice"]'),batteryField=root.querySelector('[data-battery-configuration]');
+  const configuredValues=()=>{const formData=new FormData(root.querySelector('#modal-form')),values=Object.fromEntries(formData.entries());values.optionalUpgradeIds=[...root.querySelectorAll('[name="optionalUpgradeId"]:checked')].map(control=>control.value);return values};
+  const refreshConfiguredOptions=()=>{
+   const previousPackage=packagePick.value;
+   const systemsForSelection=activeQuotationConfigurations('systemConfigurations').filter(item=>item.systemType===systemTypePick.value);
+   const previousSystem=systemConfigPick.value;
+   systemConfigPick.innerHTML=`<option value="">${systemsForSelection.length?'Select active system capacity':'No active system configurations'}</option>${systemsForSelection.map(item=>`<option value="${esc(item.id)}">${esc(item.name)} · ${fmtKw(item.actualSolarCapacityKw)} · ${esc(item.phase)}</option>`).join('')}`;
+   systemConfigPick.value=systemsForSelection.some(item=>item.id===previousSystem)?previousSystem:systemsForSelection[0]?.id||'';
+   const system=systemsForSelection.find(item=>item.id===systemConfigPick.value);
+   if(system){
+    panelPick.value=system.panelClassification;phasePick.value=system.phase;capacityField.value=system.actualSolarCapacityKw;capacityField.readOnly=true;
+    batteryPick.value=batteryConfigurationForSystem(system);
+    batteryField.classList.toggle('hidden',!batteryPick.value)
+   }
+   else{capacityField.readOnly=false;batteryPick.value='';batteryField.classList.add('hidden')}
+   root.querySelectorAll('[name="optionalUpgradeId"]').forEach(control=>{
+    const upgrade=activeQuotationConfigurations('optionalUpgrades').find(item=>item.id===control.value),compatible=!upgrade?.compatibleConfigurations?.length||upgrade.compatibleConfigurations.includes(system?.id);
+    control.disabled=!compatible;if(!compatible)control.checked=false
+   });
+   const structure=activeQuotationConfigurations('structureConfigurations').find(item=>item.id===structurePick.value),selection={
+    kitCategoryId:categoryPick.value,systemConfigurationId:system?.id||'',systemType:systemTypePick.value,
+    panelClassification:panelPick.value,phase:phasePick.value,batteryConfiguration:batteryPick.value,
+    structureConfigurationId:structure?.id||'',supplyScope:structure?.supplyScope||''
+   };
+   const matches=matchingBomTemplates(selection),previousBom=bomPick.value;
+   bomPick.innerHTML=`<option value="">${matches.length?'Select active BOM template':'No active BOM matches this selection'}</option>${matches.map(item=>`<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}`;
+   bomPick.value=matches.some(item=>item.id===previousBom)?previousBom:matches[0]?.id||'';
+   const matchingPackages=solarPackages.filter(item=>item.kitCategoryId===categoryPick.value&&item.systemConfigurationId===system?.id&&item.structureConfigurationId===structure?.id&&item.bomTemplateId===bomPick.value);
+   if(!matchingPackages.some(item=>item.id===packagePick.value))packagePick.value=matchingPackages[0]?.id||'';
+   if(packagePick.value!==previousPackage){
+    quotationPriceField.dataset.manual='';
+    const overrideReasonField=root.querySelector('[name="priceOverrideReason"]');
+    if(overrideReasonField)overrideReasonField.value=''
+   }
+   updateConfiguredPreview()
+  };
+  const updateConfiguredPreview=()=>{
+   const lead=leadOf(root.querySelector('[name="leadId"]')?.value),values=configuredValues();
+   if(!lead||!values.systemConfigurationId||!values.kitCategoryId||!values.structureConfigurationId){configPreview.textContent='Choose an active category, system capacity and structure to find its configured BOM and price.';return}
+   try{
+    const config=buildConfiguredQuote(values,lead,JSON.parse(bomUserField.value||'{}'));
+     configPreview.textContent=`${config.category.name}: package price ${money(config.configuredPrice)} (${config.solarPackage.gstInclusion.toLowerCase()} GST); total with GST ${money(config.tax.total)} at ${config.tax.effectiveRate.toFixed(2)}%. ${config.bom.length} BOM materials · estimated subsidy ${money(config.subsidy.amount)}.`;
+    if(quotationPriceField&&quotationPriceField.dataset.manual!=='true'){
+     quotationPriceField.value=Math.round((config.tax.total+Number.EPSILON)*100)/100;
+    }
+   }catch(error){configPreview.textContent=error.message||'Complete the configured selection to preview price and tax.'}
+  };
+  packagePick.addEventListener('change',()=>{
+   const selected=solarPackages.find(item=>item.id===packagePick.value);if(!selected)return;
+   quotationPriceField.dataset.manual='';
+   const overrideReasonField=root.querySelector('[name="priceOverrideReason"]');if(overrideReasonField)overrideReasonField.value='';
+   systemTypePick.value=selected.systemType;categoryPick.value=selected.kitCategoryId;systemConfigPick.value=selected.systemConfigurationId;
+   structurePick.value=selected.structureConfigurationId;bomPick.value=selected.bomTemplateId;
+   refreshConfiguredOptions()
+  });
+  const quotationTemplatePick=root.querySelector('[name="quotationTemplateId"]');
+  quotationTemplatePick?.addEventListener('change',()=>{
+   const template=activeQuotationTemplates.find(item=>item.id===quotationTemplatePick.value);if(!template)return;
+   for(const field of ['termsAndConditions','paymentTerms','companyScope','customerScope','exclusions','warranty','bankDetails','authorizedSignatory']){const control=root.querySelector(`[name="${field}"]`);if(control)control.value=template[field]||''}
+   if(template.paymentTemplateId&&activePaymentTemplates.some(item=>item.id===template.paymentTemplateId))root.querySelector('[name="paymentTemplateId"]').value=template.paymentTemplateId;
+   if(num(template.validityDays)>0)root.querySelector('[name="validUntil"]').value=isoOffset(num(template.validityDays))
+  });
+  [categoryPick,systemTypePick,systemConfigPick,structurePick].forEach(control=>control?.addEventListener('change',refreshConfiguredOptions));
+  bomPick.addEventListener('change',updateConfiguredPreview);
+  root.querySelectorAll('[name="optionalUpgradeId"]').forEach(control=>control.addEventListener('change',updateConfiguredPreview));
+  root.querySelector('[name="discountAmount"]')?.addEventListener('input',updateConfiguredPreview);
+  quotationPriceField?.addEventListener('input',()=>{quotationPriceField.dataset.manual='true'});
+  if(quotationPriceField?.value)quotationPriceField.dataset.manual='true';
+  refreshConfiguredOptions();
+  renderLines();
  }
  const leadSelect=root.querySelector('[name="leadId"]'),capacityInput=root.querySelector('[name="capacityKw"]'),centralInput=root.querySelector('[name="centralSubsidy"]');
  if(leadSelect&&capacityInput){
@@ -676,7 +1172,7 @@ function openModal(title,subtitle,fields,onSave,recordMeta){
    if(resetCapacity||!capacityInput.value)capacityInput.value=lead.capacityKw;
    if(centralInput&&centralInput.dataset.manual!=='true')centralInput.value=centralSubsidyEstimate(capacityInput.value,lead.category)
   };
-  leadSelect.addEventListener('change',()=>updateLeadDefaults(true));
+  leadSelect.addEventListener('change',()=>{updateLeadDefaults(true);root.querySelector('[name="systemConfigurationId"]')?.dispatchEvent(new Event('change'))});
   updateLeadDefaults(false);
   capacityInput.addEventListener('input',()=>{
    const lead=leadOf(leadSelect.value);
@@ -750,20 +1246,225 @@ function openFollowup(existing){let f=existing||{};let opts=choiceLeads();if(!op
  await syncLeadStatus(leadId);
 },existing?{recordType:'followup',recordId:existing.id}:null)}
 function centralSubsidyEstimate(capacity,category){if(category!=='Residential')return 0;return Math.min(78000,Math.max(0,Math.min(num(capacity),2)*30000+Math.max(0,Math.min(num(capacity)-2,1))*18000))}
-function openQuote(existing){
- const q=existing||{},defaults=existing?{}:DEFAULT_QUOTATION_TERMS,choices=[{id:'manual',name:'Manual project pricing'},...db.catalog.map(item=>({id:item.id,name:`${item.name} · ${money(item.unitRate)}/${item.unit}`}))];
+function solarKitComponentSummary(item,index){return `${index+1}. ${item.description}${item.make?` · ${item.make}`:''}${item.capacity?` · ${item.capacity}`:''}${item.quantity?` · Qty ${item.quantity}`:''}${item.productWarranty?` · Product warranty: ${item.productWarranty}`:''}${item.performanceWarranty?` · Performance warranty: ${item.performanceWarranty}`:''}`}
+function openSolarKit(existing){
+ if(!canManageSolarKits()){toast('Only a Business Owner or Manager can manage solar kits.',true);return}
+ const kit=existing||{},blankItem=()=>({description:'',make:'',capacity:'',quantity:''}),items=Array.isArray(kit.items)?kit.items.map(item=>({description:item.description||'',make:item.make||'',capacity:item.capacity||'',quantity:solarKitQuantityLabel(item),scaleWithCapacity:item.scaleWithCapacity,wholeQuantity:item.wholeQuantity})):(existing?[blankItem()]:referenceSolarKitMaterials());
+ const fields=`${input('name','Materials list name',kit.name||'','text',true)}${select('systemType','Solar type',['On-grid','Hybrid','Off-grid'],kit.systemType||'On-grid')}<div class="full"><div class="panel-title">Materials</div><p class="panel-subtitle">Maintain reusable material descriptions only. Configure capacity and customer selling price once in Solar Packages & Pricing.</p><input type="hidden" name="kitItems" value="${esc(JSON.stringify(items))}"><div class="solar-kit-table-wrap"><table class="solar-kit-entry"><thead><tr><th>S. No</th><th>Materials description</th><th>Make</th><th>Capacity</th><th>Qty</th></tr></thead><tbody data-solar-kit-items></tbody></table></div><button type="button" class="btn subtle" data-add-solar-kit-item>+ Add material</button></div>`;
+ openModal(existing?'Update materials list':'Create materials list','Material lists do not store capacity pricing.',fields,async values=>{
+  const parsedItems=JSON.parse(values.kitItems||'[]');
+  if(!values.name.trim())throw Error('Enter a materials list name.');
+  if(!parsedItems.length)throw Error('Add at least one material.');
+  if(parsedItems.some(item=>!String(item.description||'').trim()))throw Error('Every component needs a materials description.');
+  const data={...(existing?.defaultTemplateId?{defaultTemplateId:existing.defaultTemplateId}:{}),name:values.name.trim(),systemType:values.systemType,pricing:[],items:parsedItems.map(item=>{const component={description:String(item.description).trim(),make:String(item.make||'').trim(),capacity:String(item.capacity||'').trim(),quantity:String(item.quantity||'').trim()};if(typeof item.scaleWithCapacity==='boolean')component.scaleWithCapacity=item.scaleWithCapacity;if(typeof item.wholeQuantity==='boolean')component.wholeQuantity=item.wholeQuantity;return component}),materialsTemplateVersion:1,shared:true,updatedAt:stamp()};
+  if(!existing){data.createdAt=stamp();data.createdBy=uid()}
+  await writeRecord('solarKits',data,existing?.id)
+ });
+ const root=$('#modal-root'),itemField=root.querySelector('[name="kitItems"]'),list=root.querySelector('[data-solar-kit-items]'),renderItems=()=>{
+  itemField.value=JSON.stringify(items);
+  list.innerHTML=items.map((item,index)=>`<tr><td class="solar-kit-number">${index+1}<button class="cell-action solar-kit-remove" type="button" data-remove-solar-kit-item="${index}" aria-label="Remove item ${index+1}">×</button></td><td><input data-kit-index="${index}" data-kit-field="description" aria-label="Materials description ${index+1}" value="${esc(item.description)}" required></td><td><input data-kit-index="${index}" data-kit-field="make" aria-label="Make ${index+1}" value="${esc(item.make)}"></td><td><input data-kit-index="${index}" data-kit-field="capacity" aria-label="Capacity ${index+1}" value="${esc(item.capacity)}"></td><td><input data-kit-index="${index}" data-kit-field="quantity" aria-label="Qty ${index+1}" value="${esc(item.quantity)}"></td></tr>`).join('')
+ };
+ list.addEventListener('input',event=>{
+  const control=event.target.closest('[data-kit-field]');if(!control)return;
+  const item=items[Number(control.dataset.kitIndex)],field=control.dataset.kitField;
+  item[field]=control.value;
+  itemField.value=JSON.stringify(items)
+ });
+ list.addEventListener('click',event=>{const remove=event.target.closest('[data-remove-solar-kit-item]');if(!remove)return;items.splice(Number(remove.dataset.removeSolarKitItem),1);renderItems()});
+ root.querySelector('[data-add-solar-kit-item]').addEventListener('click',()=>{items.push(blankItem());renderItems()});
+ renderItems()
+}
+function activeQuotationConfigurations(collection,date=today()){return (db[collection]||[]).filter(record=>record.status==='Active'&&(!record.effectiveFrom||record.effectiveFrom<=date)&&(!record.effectiveTo||record.effectiveTo>=date))}
+function activeSolarPackages(date=today()){
+ const packages=activeQuotationConfigurations('solarPackages',date).flatMap(item=>{
+  if(num(item.customerSellingPrice)>0)return [item];
+  const book=db.customerPriceBooks.find(price=>price.id===item.customerPriceBookId),system=db.systemConfigurations.find(config=>config.id===item.systemConfigurationId);
+  if(!book||!system){console.warn(`Ignoring solar package "${item.name}" because its legacy price or system is missing.`);return []}
+  try{
+   const {amount}=resolveCustomerPrice([book],{...item,actualSolarCapacityKw:num(system.actualSolarCapacityKw)},date);
+   return [{...item,customerSellingPrice:amount,gstProfileId:book.gstProfileId,gstInclusion:book.gstInclusion||'Exclusive'}];
+  }catch(error){console.warn(`Ignoring solar package "${item.name}" with an invalid legacy price: ${error.message||error}`);return []}
+ });
+ const linkedPriceBooks=new Set(packages.map(item=>item.customerPriceBookId).filter(Boolean));
+ const packageKeys=new Set(packages.map(item=>[item.kitCategoryId,item.systemConfigurationId,item.structureConfigurationId].join('|')));
+ const derived=(db.customerPriceBooks||[]).filter(book=>book.status==='Active'&&(!book.effectiveFrom||book.effectiveFrom<=date)&&(!book.effectiveTo||book.effectiveTo>=date)&&!linkedPriceBooks.has(book.id)&&!packageKeys.has([book.kitCategoryId,book.systemConfigurationId,book.structureConfigurationId].join('|'))).flatMap(book=>{
+  const category=activeQuotationConfigurations('kitCategories',date).find(item=>item.id===book.kitCategoryId),system=activeQuotationConfigurations('systemConfigurations',date).find(item=>item.id===book.systemConfigurationId),structure=activeQuotationConfigurations('structureConfigurations',date).find(item=>item.id===book.structureConfigurationId);
+  if(!category||!system||!structure)return [];
+  const selection={kitCategoryId:category.id,systemConfigurationId:system.id,systemType:system.systemType,panelClassification:system.panelClassification,phase:system.phase,batteryConfiguration:book.batteryConfiguration||batteryConfigurationForSystem(system),structureConfigurationId:structure.id,supplyScope:structure.supplyScope};
+  const template=matchingBomTemplates(selection).find(item=>item.status==='Active');
+  if(!template)return [];
+  try{
+   const {amount}=resolveCustomerPrice([book],{...selection,actualSolarCapacityKw:num(system.actualSolarCapacityKw)},date);
+   return [{id:`auto-${book.id}`,name:`${category.name} · ${system.nominalCapacityKw} kW ${system.systemType} · ${structure.name}`,kitCategoryId:category.id,systemConfigurationId:system.id,structureConfigurationId:structure.id,bomTemplateId:template.id,customerPriceBookId:book.id,systemType:system.systemType,nominalCapacityKw:num(system.nominalCapacityKw),actualSolarCapacityKw:num(system.actualSolarCapacityKw),panelClassification:system.panelClassification,phase:system.phase,batteryConfiguration:selection.batteryConfiguration,structureName:structure.name,supplyScope:structure.supplyScope,customerSellingPrice:amount,gstProfileId:book.gstProfileId,gstInclusion:book.gstInclusion||'Exclusive',status:'Active',effectiveFrom:book.effectiveFrom||'',effectiveTo:book.effectiveTo||'',generatedFromLegacyConfiguration:true}];
+  }catch(error){console.warn(`Ignoring invalid legacy customer price "${book.name}": ${error.message||error}`);return []}
+ });
+ return [...packages,...derived]
+}
+function batteryConfigurationForSystem(system){return system?.batteryConfiguration||(system?.batteryQuantity?`${system.batteryVoltage} V ${system.batteryCapacityAh} Ah × ${system.batteryQuantity}`:'')}
+function matchingBomTemplates(selection){const keys=['kitCategoryId','systemConfigurationId','systemType','panelClassification','phase','structureConfigurationId','supplyScope','batteryConfiguration'];return activeQuotationConfigurations('bomTemplates').filter(template=>keys.every(key=>String(template[key]||'')===String(selection[key]||'')))}
+function buildConfiguredQuote(values,lead,userQuantities={}){
+ const solarPackage=values.solarPackageId?activeSolarPackages().find(item=>item.id===values.solarPackageId):null;
+ if(values.solarPackageId&&!solarPackage)throw Error('The selected solar package is no longer active. Choose another package.');
+ const config=solarPackage?{...values,kitCategoryId:solarPackage.kitCategoryId,systemConfigurationId:solarPackage.systemConfigurationId,structureConfigurationId:solarPackage.structureConfigurationId,bomTemplateId:solarPackage.bomTemplateId,systemType:solarPackage.systemType,batteryConfiguration:solarPackage.batteryConfiguration||values.batteryConfiguration}:values;
+ const system=activeQuotationConfigurations('systemConfigurations').find(item=>item.id===config.systemConfigurationId);
+ const category=activeQuotationConfigurations('kitCategories').find(item=>item.id===config.kitCategoryId);
+ const structure=activeQuotationConfigurations('structureConfigurations').find(item=>item.id===config.structureConfigurationId);
+ if(!system||!category||!structure)throw Error('Select an active kit category, system configuration and mounting structure / supply scope.');
+ if(system.systemType!==config.systemType)throw Error('The system configuration does not match the selected system type.');
+ if(system.panelClassification!==config.panelClassification)throw Error('The system configuration does not match the selected panel classification.');
+ if(system.phase!==config.phase)throw Error('The system configuration does not match the selected phase.');
+ const selection={kitCategoryId:category.id,systemConfigurationId:system.id,systemType:system.systemType,nominalCapacityKw:num(system.nominalCapacityKw),panelClassification:system.panelClassification,phase:system.phase,batteryConfiguration:String(config.batteryConfiguration||''),structureConfigurationId:structure.id,supplyScope:structure.supplyScope,actualSolarCapacityKw:num(system.actualSolarCapacityKw)};
+ if(system.systemType==='On-grid'&&selection.batteryConfiguration)throw Error('On-grid-only systems cannot use a battery configuration.');
+ const templates=matchingBomTemplates(selection);
+ const template=templates.find(item=>item.id===config.bomTemplateId)||(config.allowMatchingBomFallback?templates[0]:null);
+ if(!template)throw Error(templates.length?'Select an active BOM matching this complete configuration.':'No active BOM matches this complete configuration.');
+ if(!solarPackage)throw Error('Select an active Solar Package & Pricing entry for this capacity and configuration.');
+ const {amount}=resolveSolarPackagePrice(solarPackage,selection,today());
+ const gstProfile=activeQuotationConfigurations('gstProfiles').find(item=>item.id===solarPackage.gstProfileId);
+ if(!gstProfile)throw Error('The solar package refers to a GST profile that is not active.');
+ const discount=num(values.discountAmount);
+ if(discount<0||discount>amount)throw Error('Discount must be non-negative and cannot exceed the configured customer price.');
+ if(discount>0&&(!businessManager()||!String(values.discountReason||'').trim()))throw Error('Only a Business Owner may apply a discount, and an audited reason is required.');
+ const upgrades=(values.optionalUpgradeIds||[]).map(id=>activeQuotationConfigurations('optionalUpgrades').find(item=>item.id===id)).filter(Boolean);
+ if(upgrades.some(item=>Array.isArray(item.compatibleConfigurations)&&item.compatibleConfigurations.length&&!item.compatibleConfigurations.includes(system.id)))throw Error('One or more selected upgrades are incompatible with this system configuration.');
+ const baseTax=calculateConfiguredTax(amount-discount,gstProfile,solarPackage.gstInclusion==='Inclusive');
+ const upgradeTax=upgrades.map(item=>calculateConfiguredTax(num(item.customerUnitPrice)*Math.max(1,num(item.quantity)||1),{allocations:[{name:item.name,allocationPercent:100,gstRate:num(item.gstRate)}]},false)).reduce((total,current)=>({
+  taxableValue:total.taxableValue+current.taxableValue,taxAmount:total.taxAmount+current.taxAmount,
+  total:total.total+current.total,components:[...total.components,...current.components]
+ }),{taxableValue:0,taxAmount:0,total:0,components:[]});
+ const upgradeAmount=upgradeTax.taxableValue;
+ const taxableValue=baseTax.taxableValue+upgradeTax.taxableValue,taxAmount=baseTax.taxAmount+upgradeTax.taxAmount;
+ const tax={taxableValue,effectiveRate:taxableValue?taxAmount/taxableValue*100:baseTax.effectiveRate,taxAmount,total:baseTax.total+upgradeTax.total,components:[...baseTax.components,...upgradeTax.components]};
+ const bom=buildConfiguredBom(template,system,activeQuotationConfigurations('materialMaster'),structure,userQuantities);
+ for(const upgrade of upgrades)if(upgrade.replacesComponentId){
+  const componentIndex=bom.findIndex(item=>item.materialId===upgrade.replacesComponentId);
+  if(componentIndex<0)throw Error(`Upgrade ${upgrade.name} replaces a BOM material that is not included in this package.`);
+  bom.splice(componentIndex,1)
+ }
+ bom.push(...upgrades.map(item=>({materialId:item.id,description:item.name,make:'Optional upgrade',capacity:'',quantity:Math.max(1,num(item.quantity)||1),uom:item.uom||'unit',customerUnitPrice:num(item.customerUnitPrice),displayOrder:Number.MAX_SAFE_INTEGER})));
+ const subsidy=calculateConfiguredSubsidy(activeQuotationConfigurations('subsidyConfigurations'),selection,lead.category,values.customerState||'',today());
+ return {
+  selection,system,category,structure,template,gstProfile,solarPackage,
+  configuredPrice:amount,upgradeAmount,upgrades,discountAmount:discount,discountReason:String(values.discountReason||'').trim(),
+  tax,bom,subsidy
+ };
+}
+function openQuote(existing,revision=false){
+ if(existing&&!revision&&existing.status!=='Draft'){toast('Sent or accepted quotations are immutable. Create a revision to make changes.',true);return}
+ const q=revision?{...existing,status:'Draft',validUntil:isoOffset(30)}:existing||{},choices=db.catalog.map(item=>({id:item.id,name:item.name})),activeQuotationTemplates=activeQuotationConfigurations('quotationTemplates'),quotationTemplate=activeQuotationTemplates.find(item=>item.id===q.quotationTemplateId)||(!existing?activeQuotationTemplates[0]:null),defaults=existing?{}:{...DEFAULT_QUOTATION_TERMS,...quotationTemplate};
+ const selectedUpgradeIds=q.optionalUpgradeIds||[],upgradeChoices=activeQuotationConfigurations('optionalUpgrades'),activePaymentTemplates=activeQuotationConfigurations('paymentTemplates'),paymentTemplateChoices=[{id:'',name:'No payment milestone template'},...activePaymentTemplates.map(item=>({id:item.id,name:item.name}))],quotationTemplateChoices=[{id:'',name:'No quotation template'},...activeQuotationTemplates.map(item=>({id:item.id,name:item.name}))];
  if(!visible(db.leads).length){toast('Create a lead first.',true);return}
- const lead=leadOf(q.leadId),defaultLead=lead||leadOf(choices[1].id),defaultCapacity=q.capacityKw||defaultLead?.capacityKw||'';
- const initialLines=q.lineItems||((q.productName||q.price)?[{productId:q.productId||'',productName:q.productName||q.systemType||'Solar project item',quantity:num(q.quantity)||1,unitPrice:num(q.unitPrice??q.taxableValue??q.price),gstRate:num(q.gstRate??DEFAULT_GST_RATE)}]:[]);
- const fields=`${existing?`<div class="full"><strong>${esc(lead?.customerName||'')}</strong></div>`:formLead()}${select('systemType','System type',['On-grid','Hybrid','Off-grid'],q.systemType||'On-grid')}${input('capacityKw','Capacity (kWp)',defaultCapacity,'number',true,'min="0.1" step="0.1"')}<div class="full"><div class="panel-title">Quotation components</div><p class="panel-subtitle">Add catalog products or enter a manual item with its rate and GST.</p></div>${select('quoteProductPick','Product',choices,'manual')}${input('quoteQuantity','Quantity',1,'number',false,'min="0.01" step="0.01"')}${input('quoteUnitPrice','Unit rate before GST (₹)','','number',false,'min="0.01" step="0.01"')}${select('quoteGstRate','GST rate (%)',[String(DEFAULT_GST_RATE)],String(DEFAULT_GST_RATE))}<div class="full"><button type="button" class="btn subtle" data-quote-add>+ Add quotation item</button><input type="hidden" name="lineItems" value="${esc(JSON.stringify(initialLines))}"><div data-quote-lines></div></div>${input('centralSubsidy','Central subsidy estimate (₹)',q.centralSubsidy??(existing?0:centralSubsidyEstimate(defaultCapacity,defaultLead?.category)),'number',false,'min="0" step="1"')}${input('stateSubsidy','State subsidy (₹)',q.stateSubsidy||0,'number',false,'min="0" step="1"')}${select('contractBasis','Contract tax basis',['GST inclusive','GST exclusive'],q.contractBasis||'GST inclusive')}${input('initialDepositPercent','Initial deposit (%)',q.initialDepositPercent??20,'number',true,'min="0" max="100" step="0.1"')}${select('status','Quotation status',QUOTESTATUS,q.status||'Draft')}${input('validUntil','Valid until',q.validUntil||(existing?'':isoOffset(30)),'date')}${textarea('notes','Scope / inclusions',q.notes||'')}${textarea('termsAndConditions','Terms and conditions',q.termsAndConditions??defaults.termsAndConditions??'')}${textarea('paymentTerms','Payment terms',q.paymentTerms??defaults.paymentTerms??'')}${textarea('customerScope','Customer scope',q.customerScope??defaults.customerScope??'')}${textarea('exclusions','Exclusions',q.exclusions??defaults.exclusions??'')}${textarea('warranty','Warranty',q.warranty??defaults.warranty??'')}`;
- openModal(existing?'Edit quotation':'Create solar quotation','Catalog pricing, GST and PM Surya Ghar subsidy estimates',fields,async x=>{
-  const leadId=existing?.leadId||x.leadId,l=leadOf(leadId),lineItems=JSON.parse(x.lineItems||'[]');
+ const lead=leadOf(q.leadId),leadChoices=choiceLeads();if(q.leadId&&!leadChoices.some(item=>item.id===q.leadId))leadChoices.unshift({id:q.leadId,name:lead?.customerName||'Current lead'});
+ const defaultLead=lead||leadOf(leadChoices[0]?.id),systems=activeQuotationConfigurations('systemConfigurations'),categories=activeQuotationConfigurations('kitCategories'),structures=activeQuotationConfigurations('structureConfigurations'),solarPackages=activeSolarPackages(),selectedSolarPackage=solarPackages.find(item=>item.id===q.solarPackageId)||solarPackages.find(item=>item.kitCategoryId===q.kitCategoryId&&item.systemConfigurationId===q.systemConfigurationId&&item.structureConfigurationId===q.structureConfigurationId)||(!existing?solarPackages[0]:null),systemType=selectedSolarPackage?.systemType||q.systemType||'On-grid',selectedCategory=categories.find(item=>item.id===(selectedSolarPackage?.kitCategoryId||q.kitCategoryId))||categories[0],selectedSystem=systems.find(item=>item.id===(selectedSolarPackage?.systemConfigurationId||q.systemConfigurationId))||systems.find(item=>item.systemType===systemType&&Math.abs(num(item.actualSolarCapacityKw)-num(q.capacityKw||defaultLead?.capacityKw))<0.005)||systems.find(item=>item.systemType===systemType),selectedStructure=structures.find(item=>item.id===(selectedSolarPackage?.structureConfigurationId||q.structureConfigurationId))||structures[0],panelClassification=q.panelClassification||selectedSystem?.panelClassification||'',phase=q.phase||selectedSystem?.phase||'',batteryConfiguration=selectedSolarPackage?.batteryConfiguration||q.batteryConfiguration||batteryConfigurationForSystem(selectedSystem),defaultCapacity=selectedSystem?.actualSolarCapacityKw||q.capacityKw||defaultLead?.capacityKw||'',systemOptions=systems.filter(item=>item.systemType===systemType).map(item=>({id:item.id,name:item.name})),systemTypeOptions=[...new Set([...systems.map(item=>item.systemType),systemType])],structureOptions=[{id:'',name:'Select supply scope / structure'},...structures.map(item=>({id:item.id,name:`${item.name} · ${item.supplyScope}`}))],selection={kitCategoryId:selectedCategory?.id||'',systemConfigurationId:selectedSystem?.id||'',systemType,panelClassification,phase,batteryConfiguration,structureConfigurationId:selectedStructure?.id||'',supplyScope:selectedStructure?.supplyScope||''},bomOptions=matchingBomTemplates(selection).map(item=>({id:item.id,name:item.name})),bomSelection=selectedSolarPackage?.bomTemplateId||q.bomTemplateId||bomOptions[0]?.id||'',paymentTemplateId=q.paymentTemplateId||quotationTemplate?.paymentTemplateId||activePaymentTemplates[0]?.id||'';
+ const primaryCategoryId=selectedSolarPackage?.kitCategoryId||q.kitCategoryId||selectedCategory?.id||'';
+ const packageChoices=solarPackages.map(item=>({id:item.id,name:`${item.name} · ${money(item.customerSellingPrice)}`}));
+ const upgradeOptionsMarkup=upgradeChoices.map(item=>`<label class="inline-choice"><input type="checkbox" name="optionalUpgradeId" value="${esc(item.id)}" ${selectedUpgradeIds.includes(item.id)?'checked':''}><span>${esc(item.name)}</span></label>`).join('');
+ const initialLines=(q.lineItems||((q.productName||q.price)?[{productId:q.productId||'',productName:q.productName||q.systemType||'Solar project item',quantity:num(q.quantity)||1,unit:q.unit||'',unitPrice:num(q.unitPrice??q.taxableValue??q.price)}]:[])).map(item=>({...item,productId:item.productId||'',productName:item.productName||item.description||'Solar project item',quantity:num(item.quantity)||1,unit:item.unit||'',unitPrice:num(item.unitPrice??item.taxableValue??item.price),components:Array.isArray(item.components)?item.components:undefined}));
+ const savedPriceOverride=q.configurationSnapshot?.priceOverride;
+ const fields=`
+  ${select('leadId','Select Lead',leadChoices,q.leadId||leadChoices[0]?.id||'')}
+  ${select('solarPackageId','Solar package and customer price',packageChoices,selectedSolarPackage?.id||'',true)}
+  ${select('kitCategoryId','Solar kit category',categories.map(item=>({id:item.id,name:item.name})),primaryCategoryId,true)}
+  ${select('status','Quotation status',[...QUOTESTATUS.filter(status=>status!=='Accepted').map(status=>({id:status,name:status})),{id:'Accepted',name:'Confirmed'}],q.status||'Draft',false)}
+  ${select('systemType','System type',systemTypeOptions,systemType,true)}
+  ${select('systemConfigurationId','System Capacity (kWp)',[{id:'',name:'Select a system capacity'},...systemOptions],selectedSystem?.id||'',true)}
+  ${select('structureConfigurationId','Supply scope / mounting structure',structureOptions,selectedStructure?.id||'',true)}
+  <div class="full${batteryConfiguration?'':' hidden'}" data-battery-configuration>${input('batteryConfiguration','Battery configuration (if applicable)',batteryConfiguration,'text',false,'readonly')}</div>
+  ${select('bomTemplateId','Bill of Materials template',[{id:'',name:bomOptions.length?'Select active BOM template':'No active BOM matches this selection'},...bomOptions],bomSelection,true)}
+  ${input('quotationPrice','Quotation price (₹)',savedPriceOverride?.amount??'','number',true,businessManager()?'min="0.01" step="0.01"':'readonly min="0.01" step="0.01"')}
+  ${businessManager()?input('priceOverrideReason','Authorized price override reason',savedPriceOverride?.reason||'','text',false,'maxlength="500"'):''}
+  <div class="full muted-small">The package price is fixed by Solar Packages & Pricing. Only a Business Owner may override it, with a recorded reason.</div>
+  <div class="full"><div class="panel-title">Package preview</div><div class="info-note" data-configured-quote-preview>Select an active package to load its materials, selling price, tax, subsidy and payment defaults.</div></div>
+  ${upgradeChoices.length?`<div class="full"><div class="panel-title">Optional upgrades</div><div class="quote-option-list">${upgradeOptionsMarkup}</div></div>`:''}
+  ${businessManager()?`${input('discountAmount','Authorized discount (₹)',q.discountAmount||0,'number',false,'min="0" step="0.01"')}${input('discountReason','Discount reason',q.discountReason||'','text',false,'maxlength="500"')}`:''}
+  ${select('quotationTemplateId','Quotation template',quotationTemplateChoices,q.quotationTemplateId||quotationTemplate?.id||'',false)}
+  ${select('paymentTemplateId','Payment milestone template',paymentTemplateChoices,paymentTemplateId,false)}
+  ${input('customerState','Customer state (for subsidy eligibility)',q.customerState||'')}
+  ${textarea('customerScope','Customer-specific scope / responsibilities',q.customerScope??defaults.customerScope??'')}
+  ${textarea('notes','Inclusions and customer-specific adjustments',q.notes||'')}
+  <div class="full hidden" aria-hidden="true">
+   ${input('panelClassification','',panelClassification,'hidden')}
+   ${input('phase','',phase,'hidden')}
+   ${input('capacityKw','',defaultCapacity,'hidden')}
+   ${input('bomUserQuantities','',JSON.stringify(q.bomUserQuantities||{}),'hidden')}
+   ${input('configurationSnapshot','',JSON.stringify(q.configurationSnapshot||''),'hidden')}
+   ${select('quoteProductPick','',[{id:'',name:'Select catalog product'},...choices],'',false)}
+   ${input('quoteQuantity','',1,'number',false,'min="0.01" step="0.01"')}
+   <button type="button" data-quote-add></button>
+   <input type="hidden" name="lineItems" value="${esc(JSON.stringify(initialLines))}"><div data-quote-lines></div>
+   ${input('centralSubsidy','',q.centralSubsidy??(existing?0:centralSubsidyEstimate(defaultCapacity,defaultLead?.category)),'number',false,'min="0" step="1"')}
+   ${input('stateSubsidy','',q.stateSubsidy||0,'number',false,'min="0" step="1"')}
+   ${select('taxMode','',['CGST + SGST','IGST'],q.taxMode||((db.invoiceSettings?.taxMode||'split')==='igst'?'IGST':'CGST + SGST'),false)}
+   ${select('contractBasis','',['GST inclusive','GST exclusive'],q.contractBasis||'GST inclusive',false)}
+   ${input('initialDepositPercent','',q.initialDepositPercent??20,'number',false,'min="0" max="100" step="0.1"')}
+   ${input('validUntil','',q.validUntil||(existing?'':isoOffset(num(quotationTemplate?.validityDays)||30)),'date')}
+   ${textarea('termsAndConditions','',q.termsAndConditions??defaults.termsAndConditions??'')}
+   ${textarea('paymentTerms','',q.paymentTerms??defaults.paymentTerms??'')}
+   ${textarea('companyScope','',q.companyScope??defaults.companyScope??'')}
+   ${textarea('exclusions','',q.exclusions??defaults.exclusions??'')}
+   ${textarea('warranty','',q.warranty??defaults.warranty??'')}
+   ${textarea('bankDetails','',q.bankDetails??defaults.bankDetails??'')}
+   ${input('authorizedSignatory','',q.authorizedSignatory??defaults.authorizedSignatory??'')}
+  </div>`;
+ const root=$('#modal-root');
+ openModal(revision?'Create quotation revision':existing?'Edit quotation':'Create solar quotation','Choose the system configuration and options for your quotation.',fields,async x=>{
+  const leadId=x.leadId||existing?.leadId,l=leadOf(leadId),lineItems=JSON.parse(x.lineItems||'[]');
+  if(!l)throw Error('Select a valid customer lead before saving the quotation.');
+  x.optionalUpgradeIds=[...root.querySelectorAll('[name="optionalUpgradeId"]:checked')].map(control=>control.value);
+  let configured=null;
+  if(x.systemConfigurationId){
+   configured=buildConfiguredQuote(x,l,JSON.parse(x.bomUserQuantities||'{}'));
+   const overridePrice=num(x.quotationPrice);
+   if(overridePrice<=0)throw Error('Enter a positive quotation price.');
+   const priceOverride=Math.abs(overridePrice-configured.tax.total)>0.01;
+   const overrideReason=String(x.priceOverrideReason||'').trim();
+   if(priceOverride&&(!businessManager()||!overrideReason))throw Error('Changing the configured package price requires a Business Owner override and a reason.');
+   const overrideTaxable=priceOverride?overridePrice/(1+configured.tax.effectiveRate/100):configured.tax.taxableValue;
+   const packageItem={configurationPackage:true,productName:`${configured.category.name} · ${configured.system.name} · ${configured.structure.name}`,quantity:1,unit:'package',unitPrice:overrideTaxable,gstProfileId:configured.gstProfile.id,gstRate:configured.tax.effectiveRate,components:configured.bom};
+   lineItems.splice(0,lineItems.length,packageItem,...lineItems.filter(item=>!item.configurationPackage));
+  }else if(lineItems.some(item=>item.configurationPackage))throw Error('Choose a configured system capacity before saving the package quotation.');
   if(!lineItems.length)throw Error('Add at least one product or service to the quotation.');
-  const taxableValue=lineItems.reduce((sum,item)=>sum+num(item.quantity)*num(item.unitPrice),0),gstAmount=lineItems.reduce((sum,item)=>sum+num(item.quantity)*num(item.unitPrice)*num(item.gstRate)/100,0),centralSubsidy=num(x.centralSubsidy),stateSubsidy=num(x.stateSubsidy),price=taxableValue+gstAmount;
+  if(lineItems.some(item=>!String(item.productName||'').trim()||num(item.quantity)<=0||num(item.unitPrice)<0))throw Error('Each quotation item needs a description, positive quantity and non-negative rate.');
+  let taxableValue,gstRate,gstAmount,price,gstBreakdown;
+  if(configured){
+   const extraValue=lineItems.filter(item=>!item.configurationPackage).reduce((sum,item)=>sum+num(item.quantity)*num(item.unitPrice),0),extraTax=calculateConfiguredTax(extraValue,configured.gstProfile,false);
+   const overridePrice=num(x.quotationPrice);
+   const priceOverridden=Math.abs(overridePrice-configured.tax.total)>0.01,overrideTaxable=priceOverridden?overridePrice/(1+configured.tax.effectiveRate/100):configured.tax.taxableValue;
+   taxableValue=overrideTaxable+extraTax.taxableValue;
+   gstAmount=(priceOverridden?overridePrice-overrideTaxable:configured.tax.taxAmount)+extraTax.taxAmount;
+   price=(priceOverridden?overridePrice:configured.tax.total)+extraTax.total;
+   gstRate=Math.round(((taxableValue?gstAmount/taxableValue*100:configured.tax.effectiveRate)+Number.EPSILON)*100)/100;
+   gstBreakdown=[...(priceOverridden?[{
+    name:'Authorized package price override',
+    allocationPercent:100,
+    gstRate:configured.tax.effectiveRate,
+    taxableValue:overrideTaxable,
+    taxAmount:overridePrice-overrideTaxable,
+   }]:configured.tax.components),...extraTax.components].filter(component=>component.taxableValue>0);
+  }else{
+   const totals=calculateSolarQuoteTotals(lineItems,DEFAULT_GST_RATE);
+   ({taxableValue,gstRate,gstAmount,price}=totals);gstBreakdown=totals.gstBreakdown||[];
+  }
+  const centralSubsidy=configured?configured.subsidy.amount:num(x.centralSubsidy),stateSubsidy=configured?0:num(x.stateSubsidy);
+  if(!configured&&num(x.discountAmount)>0)throw Error('Discounts require a configured solar package so they can be validated and audited.');
+  const quotationTemplate=activeQuotationTemplates.find(item=>item.id===x.quotationTemplateId);
+  if(x.quotationTemplateId&&!quotationTemplate)throw Error('The selected quotation template is no longer active.');
+  const paymentTemplate=activePaymentTemplates.find(item=>item.id===x.paymentTemplateId);
+  if(x.paymentTemplateId&&!paymentTemplate)throw Error('The selected payment milestone template is no longer active.');
+  if(paymentTemplate)validateMilestones(paymentTemplate.milestones);
+  let allocatedMilestones=0;
+  const paymentPlan=(paymentTemplate?.milestones||[]).map((milestone,index,array)=>{
+   const amount=index===array.length-1?Math.round((price-allocatedMilestones+Number.EPSILON)*100)/100:Math.round((price*num(milestone.percent)/100+Number.EPSILON)*100)/100;
+   allocatedMilestones+=amount;
+   return {name:milestone.name,percent:num(milestone.percent),amount}
+  });
+  const comparisonOptions=[];
   const depositPercent=num(x.initialDepositPercent);if(depositPercent<0||depositPercent>100)throw Error('Initial deposit must be between 0% and 100%.');
-  const data={leadId,assignedTo:l.assignedTo,lineItems,productId:lineItems[0].productId,productName:lineItems.length===1?lineItems[0].productName:`${lineItems.length} catalog items`,quantity:lineItems.reduce((sum,item)=>sum+num(item.quantity),0),unitPrice:lineItems[0].unitPrice,taxableValue,gstRate:taxableValue?Number((gstAmount/taxableValue*100).toFixed(2)):DEFAULT_GST_RATE,gstAmount,cgstAmount:gstAmount/2,sgstAmount:gstAmount/2,centralSubsidy,stateSubsidy,customerPayable:Math.max(0,price-centralSubsidy-stateSubsidy),contractBasis:x.contractBasis,initialDepositPercent:depositPercent,systemType:x.systemType,capacityKw:num(x.capacityKw),price,status:x.status,validUntil:x.validUntil,notes:x.notes,termsAndConditions:x.termsAndConditions,paymentTerms:x.paymentTerms,customerScope:x.customerScope,exclusions:x.exclusions,warranty:x.warranty,updatedAt:stamp()};
-  if(!existing){data.createdBy=uid();data.createdAt=stamp()}
-  const quoteId=await writeRecord('quotations',data,existing?.id);
+  const priceOverride=configured&&Math.abs(num(x.quotationPrice)-configured.tax.total)>0.01?{amount:num(x.quotationPrice),reason:String(x.priceOverrideReason||'').trim(),authorizedBy:uid(),authorizedAt:stamp()}:null;
+  const data={leadId,assignedTo:l.assignedTo,lineItems,solarPackageId:configured?.solarPackage?.id||x.solarPackageId||'',quotationTemplateId:quotationTemplate?.id||'',productId:lineItems[0].productId||'',productName:lineItems.length===1?lineItems[0].productName:`${lineItems.length} quotation items`,quantity:lineItems.reduce((sum,item)=>sum+num(item.quantity),0),unitPrice:lineItems[0].unitPrice,taxableValue,gstRate,gstAmount,cgstAmount:x.taxMode==='IGST'?0:gstAmount/2,sgstAmount:x.taxMode==='IGST'?0:gstAmount/2,igstAmount:x.taxMode==='IGST'?gstAmount:0,gstBreakdown,centralSubsidy,stateSubsidy,customerPayable:price,effectiveInvestment:Math.max(0,price-centralSubsidy-stateSubsidy),discountAmount:configured?.discountAmount||0,discountReason:configured?.discountReason||'',configurationSnapshot:configured?{solarPackage:configured.solarPackage,category:configured.category,system:configured.system,structure:configured.structure,selection:configured.selection,bomTemplate:configured.template,materials:configured.bom,upgrades:configured.upgrades,gstProfile:configured.gstProfile,tax:configured.tax,subsidy:configured.subsidy,quotationTemplate,paymentTemplate,paymentPlan,discountAmount:configured.discountAmount,discountReason:configured.discountReason,priceOverride,snapshotAt:stamp()}:JSON.parse(x.configurationSnapshot||'""')||null,kitCategoryId:configured?.category.id||x.kitCategoryId||'',systemConfigurationId:configured?.system.id||x.systemConfigurationId||'',panelClassification:configured?.system.panelClassification||x.panelClassification||'',phase:configured?.system.phase||x.phase||'',structureConfigurationId:configured?.structure.id||x.structureConfigurationId||'',supplyScope:configured?.structure.supplyScope||x.supplyScope||'',batteryConfiguration:x.batteryConfiguration||'',bomTemplateId:configured?.template.id||x.bomTemplateId||'',bomUserQuantities:JSON.parse(x.bomUserQuantities||'{}'),optionalUpgradeIds:x.optionalUpgradeIds,quoteMode:x.quoteMode,comparisonOptions,paymentTemplateId:paymentTemplate?.id||'',paymentPlan,customerState:x.customerState||'',taxMode:x.taxMode,contractBasis:x.contractBasis,initialDepositPercent:depositPercent,systemType:configured?.system.systemType||x.systemType,capacityKw:num(configured?.system.actualSolarCapacityKw||x.capacityKw),price,status:x.status,validUntil:x.validUntil,notes:x.notes,termsAndConditions:x.termsAndConditions,paymentTerms:x.paymentTerms,customerScope:x.customerScope,companyScope:x.companyScope,exclusions:x.exclusions,warranty:x.warranty,bankDetails:x.bankDetails,authorizedSignatory:x.authorizedSignatory,updatedAt:stamp()};
+  if(!existing||revision){data.createdBy=uid();data.createdAt=stamp();data.version=revision?num(existing.version||1)+1:1}
+  if(revision)data.revisionOf=existing.id;
+  const quoteId=await writeRecord('quotations',data,revision?'':existing?.id);
   if(x.status==='Accepted'){
    if(!l||terminalLeadStage(l.stage))throw Error('Terminal leads cannot accept a quotation.');
    let order=db.salesOrders.find(item=>item.leadId===leadId&&item.quotationId===quoteId);
@@ -778,7 +1479,7 @@ function openQuote(existing){
     await ensureProjectPaymentMilestones(leadId,projectId);
    }
   }else await syncLeadStatus(leadId);
- },existing?{recordType:'quotation',recordId:existing.id}:null)
+ },existing&&!revision?{recordType:'quotation',recordId:existing.id}:null,'Generate Quotation →')
 }
 function openInstallation(existing){
  const p=existing||{},choices=choiceLeads(true);if(!existing&&!choices.length){toast('Mark a lead Won first.',true);goPage('leads');return}
@@ -829,21 +1530,22 @@ function parseInvoiceItems(value){
   return{description,quantity:num(quantity),unitPrice:num(unitPrice),gstRate:num(gstRate)}
  })
 }
+function quotationTaxableValue(quote){if(quote?.taxableValue!==undefined)return num(quote.taxableValue);return (quote?.lineItems||[]).length?quote.lineItems.reduce((sum,item)=>sum+num(item.quantity)*num(item.unitPrice),0):num(quote?.price)}
+function invoiceItemFromQuotation(quote){return {description:`${fmtKw(quote.capacityKw)} ${quote.systemType||'Solar'} kit and installation`,quantity:1,unitPrice:quotationTaxableValue(quote),gstRate:num(quote.gstRate??DEFAULT_GST_RATE)}}
 function openInvoice(existing,requestedLeadId){
  if(!canManageFinance()){toast('Only authorized managers can create or change invoices.',true);return}
  const invoice=existing||{},acceptedQuotes=visible(db.quotations).filter(quote=>quote.status==='Accepted'),defaultQuote=acceptedQuotes.find(quote=>quote.id===invoice.quotationId)||acceptedQuotes.find(quote=>quote.leadId===requestedLeadId)||acceptedQuotes[0],leadId=invoice.leadId||requestedLeadId||defaultQuote?.leadId,leads=choiceLeads(),projects=visible(db.installations).filter(project=>!leadId||project.leadId===leadId),quoteOptions=[{id:'',name:'No quotation selected'},...acceptedQuotes.map(quote=>({id:quote.id,name:`${leadOf(quote.leadId)?.customerName||'Customer'} · ${quote.id}`}))],projectOptions=[{id:'',name:'No project selected'},...projects.map(project=>({id:project.id,name:`${leadOf(project.leadId)?.customerName||'Project'} · ${project.id}`}))];
  if(existing&&existing.status!=='Draft'){toast('Issued invoices cannot be edited. Use a cancellation or credit-note workflow.',true);return}
  if(!existing&&!leads.length){toast('Create a customer lead first.',true);return}
- const selectedQuote=acceptedQuotes.find(quote=>quote.id===invoice.quotationId)||defaultQuote,initialItems=invoice.items||selectedQuote?.lineItems||[{description:'Solar supply and installation',quantity:1,unitPrice:0,gstRate:0}],itemText=initialItems.map(item=>`${item.description||item.productName||'Solar project item'} | ${item.quantity||1} | ${item.unitPrice??item.rate??0} | ${item.gstRate||0}`).join('\n'),settings=db.invoiceSettings||defaultInvoiceSettings(),fields=`${select('leadId','Customer / lead',leads,leadId||leads[0]?.id)}${select('quotationId','Approved quotation (optional)',quoteOptions,invoice.quotationId||selectedQuote?.id||'',false)}${select('projectId','Project (optional)',projectOptions,invoice.projectId||'',false)}${select('invoiceType','Document type',INVOICE_TYPES,invoice.invoiceType||'Tax Invoice')}${input('issueDate','Invoice date',invoice.issueDate||today(),'date',true)}${input('dueDate','Payment due date',invoice.dueDate||isoOffset(15),'date',true)}${select('gstEnabled','GST billing',[{id:'yes',name:'GST'},{id:'no',name:'Non-GST'}],invoice.gstEnabled===false?'no':'yes')}${textarea('items','Items: Description | Quantity | Unit price | GST %',itemText)}${input('discountAmount','Discount amount (₹)',invoice.discountAmount||0,'number',false,'min="0" step="0.01"')}${select('taxMode','GST treatment',[{id:'split',name:'CGST + SGST'},{id:'igst',name:'IGST'}],invoice.taxMode||settings.taxMode||'split')}${textarea('notes','Notes / supply description',invoice.notes||'')}`;
+ const selectedQuote=acceptedQuotes.find(quote=>quote.id===invoice.quotationId)||defaultQuote,initialItems=invoice.items||(selectedQuote?[invoiceItemFromQuotation(selectedQuote)]:[{description:'Solar supply and installation',quantity:1,unitPrice:0,gstRate:0}]),itemText=initialItems.map(item=>`${item.description||item.productName||'Solar project item'} | ${item.quantity||1} | ${item.unitPrice??item.rate??0} | ${item.gstRate||0}`).join('\n'),settings=db.invoiceSettings||defaultInvoiceSettings(),fields=`${select('leadId','Customer / lead',leads,leadId||leads[0]?.id)}${select('quotationId','Approved quotation (optional)',quoteOptions,invoice.quotationId||selectedQuote?.id||'',false)}${select('projectId','Project (optional)',projectOptions,invoice.projectId||'',false)}${select('invoiceType','Document type',INVOICE_TYPES,invoice.invoiceType||'Tax Invoice')}${input('issueDate','Invoice date',invoice.issueDate||today(),'date',true)}${input('dueDate','Payment due date',invoice.dueDate||isoOffset(15),'date',true)}${select('gstEnabled','GST billing',[{id:'yes',name:'GST'},{id:'no',name:'Non-GST'}],invoice.gstEnabled===false?'no':'yes')}${textarea('items','Items: Description | Quantity | Unit price | GST %',itemText)}${input('discountAmount','Discount amount (₹)',invoice.discountAmount||0,'number',false,'min="0" step="0.01"')}${select('taxMode','GST treatment',[{id:'split',name:'CGST + SGST'},{id:'igst',name:'IGST'}],invoice.taxMode||settings.taxMode||'split')}${textarea('notes','Notes / supply description',invoice.notes||'')}`;
  openModal(existing?'Edit draft invoice':'Create invoice','Save a draft, then issue it to reserve a unique financial-year invoice number.',fields,async values=>{
   const lead=leadOf(values.leadId);if(!lead)throw Error('Select a valid customer.');
   const quote=values.quotationId?db.quotations.find(item=>item.id===values.quotationId):null;
   if(values.quotationId&&(!quote||quote.status!=='Accepted'||quote.leadId!==lead.id))throw Error('Select an accepted quotation for the chosen customer.');
   const project=values.projectId?db.installations.find(item=>item.id===values.projectId&&item.leadId===lead.id):null;
   if(values.projectId&&!project)throw Error('Select a project linked to the chosen customer.');
-  let items=quote?.lineItems?.length?quote.lineItems.map(item=>({description:item.productName||item.description||'Solar project item',quantity:num(item.quantity),unitPrice:num(item.unitPrice),gstRate:num(item.gstRate)})):parseInvoiceItems(values.items);
+  let items=quote?[invoiceItemFromQuotation(quote)]:parseInvoiceItems(values.items);
   if(!quote&&values.items.trim())items=parseInvoiceItems(values.items);
-  if(quote&&!items.length)items=[{description:quote.productName||quote.systemType||'Solar project supply',quantity:1,unitPrice:num(quote.taxableValue||quote.price),gstRate:num(quote.gstRate)}];
   const gstEnabled=values.gstEnabled==='yes';if(!gstEnabled)items=items.map(item=>({...item,gstRate:0}));
   if(invoice.invoiceType==='Tax Invoice'&&gstEnabled&&!settings.gstin.trim())throw Error('Configure the company GSTIN before issuing a GST tax invoice, or choose non-GST billing.');
   const totals=calculateInvoiceTotals(items,num(values.discountAmount),values.taxMode),saved={...totals,invoiceType:values.invoiceType,invoiceNo:'',status:'Draft',leadId:lead.id,projectId:project?.id||'',quotationId:quote?.id||'',assignedTo:lead.assignedTo,issueDate:values.issueDate,dueDate:values.dueDate,taxMode:values.taxMode,gstEnabled,seller:{name:companyName(),gstin:gstEnabled?settings.gstin||'':'',address:settings.address||'',state:settings.state||'',bankName:settings.bankName||'',bankAccount:settings.bankAccount||'',ifsc:settings.ifsc||''},paymentTerms:settings.paymentTerms||'',notes:values.notes||'',updatedAt:stamp()};
@@ -902,12 +1604,20 @@ function shareInvoice(id,channel){
 }
 function printInvoiceDocument(id){
  const invoice=db.invoices.find(item=>item.id===id);if(!invoice){toast('Invoice not found.',true);return}
- const lead=leadOf(invoice.leadId),seller=invoice.seller||{},logo=quotationLogoData(),status=invoiceStatus(invoice),rows=(invoice.items||[]).map(item=>`<tr><td>${esc(item.description)}</td><td>${num(item.quantity)}</td><td>${money(item.unitPrice)}</td><td>${invoice.gstEnabled?`${num(item.gstRate)}%`:'—'}</td><td>${money(num(item.lineTotal??item.quantity*item.unitPrice))}</td></tr>`).join(''),taxRows=!invoice.gstEnabled?'':invoice.taxMode==='igst'?`<div><span>IGST</span><strong>${money(invoice.igstAmount)}</strong></div>`:`<div><span>CGST</span><strong>${money(invoice.cgstAmount)}</strong></div><div><span>SGST</span><strong>${money(invoice.sgstAmount)}</strong></div>`,content=`<div class="solar-invoice">${logo?`<img class="invoice-logo" src="${logo}" alt="${esc(companyName())} logo">`:''}<header><div><h1>${esc(seller.name||companyName())}</h1><p>${esc(seller.address||'')}</p><p>GSTIN: ${esc(seller.gstin||'Not registered')}</p></div><div class="invoice-heading"><h2>${esc(invoice.invoiceType)}</h2><strong>${esc(invoice.invoiceNo||'DRAFT')}</strong><span>${tag(status)}</span></div></header><section class="invoice-parties"><div><b>Bill to</b><strong>${esc(lead?.customerName||'Customer')}</strong><span>${esc(lead?.city||'')}</span><span>${esc(lead?.phone||'')}</span></div><div><b>Invoice date</b><span>${dateLabel(invoice.issueDate)}</span><b>Due date</b><span>${dateLabel(invoice.dueDate)}</span><b>Place of supply</b><span>${esc(lead?.city||seller.state||'')}</span></div></section><table class="invoice-items"><thead><tr><th>Description</th><th>Qty</th><th>Unit rate</th><th>GST</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><section class="invoice-totals"><div><span>Subtotal</span><strong>${money(invoice.subtotal)}</strong></div><div><span>Discount</span><strong>− ${money(invoice.discountAmount)}</strong></div><div><span>Taxable amount</span><strong>${money(invoice.taxableAmount)}</strong></div>${taxRows}<div class="invoice-grand-total"><span>Total payable</span><strong>${money(invoice.totalAmount)}</strong></div>${invoice.status!=='Draft'?`<div><span>Paid</span><strong>${money(invoicePaid(invoice))}</strong></div><div><span>Balance due</span><strong>${money(invoiceOutstanding(invoice))}</strong></div>`:''}</section><p>${esc(invoice.notes||'')}</p><p><strong>Payment terms:</strong> ${esc(invoice.paymentTerms||'')}</p><p><strong>Bank:</strong> ${esc(seller.bankName||'')} · Account ${esc(seller.bankAccount||'')} · IFSC ${esc(seller.ifsc||'')}</p><footer>For ${esc(seller.name||companyName())}<br>Authorized signatory</footer></div>`;
+ const lead=leadOf(invoice.leadId),seller=invoice.seller||{},logo=quotationLogoData(),status=invoiceStatus(invoice),rows=(invoice.items||[]).map(item=>`<tr><td><strong>${esc(item.description)}</strong></td><td>${num(item.quantity)}</td><td>${money(item.unitPrice)}</td><td>${invoice.gstEnabled?`${num(item.gstRate)}%`:'—'}</td><td>${money(num(item.lineTotal??item.quantity*item.unitPrice))}</td></tr>`).join(''),taxRows=!invoice.gstEnabled?'':invoice.taxMode==='igst'?`<div><span>IGST</span><strong>${money(invoice.igstAmount)}</strong></div>`:`<div><span>CGST</span><strong>${money(invoice.cgstAmount)}</strong></div><div><span>SGST</span><strong>${money(invoice.sgstAmount)}</strong></div>`,terms=[['Payment terms',invoice.paymentTerms],['Bank',`${seller.bankName||''}${seller.bankAccount?` · Account ${seller.bankAccount}`:''}${seller.ifsc?` · IFSC ${seller.ifsc}`:''}`]].filter(([,value])=>String(value||'').trim()),termMarkup=terms.map(([label,value])=>`<div class="quotation-term"><h3>${label}</h3><p>${esc(value)}</p></div>`).join(''),content=`<div class="solar-quotation"><header class="quotation-letterhead">${logo?`<img class="quotation-logo" src="${logo}" alt="${esc(companyName())} logo">`:''}<div class="quotation-company"><h2>${esc(seller.name||companyName())}</h2><p>${esc(seller.address||'')}${seller.gstin?` · GSTIN: ${esc(seller.gstin)}`:''}</p></div><div class="quotation-reference"><strong>INVOICE</strong><span>${esc(invoice.invoiceNo||'DRAFT')}</span><small>${esc(status)}</small></div></header><section class="quotation-hero"><div><p>${esc(invoice.invoiceType||'INVOICE')}</p><h1>Invoice for solar project</h1></div><div><span>TOTAL PAYABLE</span><strong>${money(invoice.totalAmount)}</strong></div></section><section class="quotation-parties"><div><span>BILL TO</span><h2>${esc(lead?.customerName||'Customer')}</h2><p>${esc(lead?.phone||'')}</p><p>${esc(lead?.city||'')}</p></div><div><span>INVOICE DETAILS</span><p>Invoice date: ${dateLabel(invoice.issueDate)}</p><p>Due date: ${dateLabel(invoice.dueDate)}</p><p>Place of supply: ${esc(lead?.city||seller.state||'—')}</p></div></section><section class="quotation-section"><div class="quotation-section-heading"><h2>Invoice items</h2><span>Goods and services supplied</span></div><table class="quotation-items"><thead><tr><th>Description</th><th>Qty</th><th>Unit rate</th><th>GST</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><div class="quotation-totals"><div><span>Subtotal</span><strong>${money(invoice.subtotal)}</strong></div><div><span>Discount</span><strong>− ${money(invoice.discountAmount)}</strong></div><div><span>Taxable amount</span><strong>${money(invoice.taxableAmount)}</strong></div>${taxRows}<div class="quotation-grand-total"><span>Total payable</span><strong>${money(invoice.totalAmount)}</strong></div>${invoice.status!=='Draft'?`<div><span>Paid</span><strong>${money(invoicePaid(invoice))}</strong></div><div><span>Balance due</span><strong>${money(invoiceOutstanding(invoice))}</strong></div>`:''}</div></section>${invoice.notes?`<section class="quotation-section"><div class="quotation-section-heading"><h2>Notes</h2></div><p class="quotation-notes">${esc(invoice.notes)}</p></section>`:''}${terms.length?`<section class="quotation-section"><div class="quotation-section-heading"><h2>Payment information</h2></div><div class="quotation-terms">${termMarkup}</div></section>`:''}<footer class="quotation-acceptance quotation-acceptance-single"><div><strong>For ${esc(seller.name||companyName())}</strong><span>Authorized signatory</span></div></footer></div>`;
  openPrintWindow(`${invoice.invoiceNo||'Draft'} · ${invoice.invoiceType}`,content)
 }
 function printPaymentReceipt(id){
  const receipt=db.paymentReceipts.find(item=>item.id===id);if(!receipt){toast('Payment receipt not found.',true);return}
- const lead=leadOf(receipt.leadId),content=`<div class="solar-invoice"><header><div><h1>${esc(companyName())}</h1><p>${esc(receipt.sellerAddress||'')}</p></div><div class="invoice-heading"><h2>PAYMENT RECEIPT</h2><strong>${esc(receipt.receiptNo)}</strong></div></header><section class="invoice-parties"><div><b>Received from</b><strong>${esc(lead?.customerName||'Customer')}</strong><span>${esc(lead?.city||'')}</span></div><div><b>Payment date</b><span>${dateLabel(receipt.paymentDate)}</span><b>Mode</b><span>${esc(receipt.paymentMode||'—')}</span><b>Reference</b><span>${esc(receipt.referenceNo||'—')}</span></div></section><p>Received <strong>${money(receipt.totalAmount)}</strong> against ${esc(receipt.invoiceNo||receipt.kind||'project payment')}.</p><footer>For ${esc(companyName())}<br>Authorized signatory</footer></div>`;
+ const lead=leadOf(receipt.leadId),settings=db.invoiceSettings||defaultInvoiceSettings(),logo=quotationLogoData(),total=receipt.totalAmount??receipt.amount,invoice=db.invoices.find(item=>receipt.invoiceId&&item.id===receipt.invoiceId||receipt.invoiceNo&&item.invoiceNo===receipt.invoiceNo&&item.leadId===receipt.leadId),projectTotal=num(receipt.balanceBasisTotal??(invoice?invoice.totalAmount:contractValueForLead(receipt.leadId))),credits=num(receipt.balanceCredits??(invoice?invoiceCredits(invoice):0)),paidToDate=num(receipt.paidToDate??paidThroughReceipt(receipt,invoice)),outstanding=num(receipt.outstandingAmount??Math.max(0,projectTotal-credits-paidToDate)),summary=`<div class="quotation-totals"><div><span>${invoice?'Invoice total':'Project total'}</span><strong>${projectTotal>0?money(projectTotal):'—'}</strong></div>${credits?`<div><span>Credits issued</span><strong>− ${money(credits)}</strong></div>`:''}<div><span>Paid to date (including this payment)</span><strong>${money(paidToDate)}</strong></div><div class="quotation-grand-total"><span>Outstanding after this payment</span><strong>${projectTotal>0?money(outstanding):'—'}</strong></div></div>`;
+ const historyPayments=invoice?orderedConfirmedPayments((db.payments||[]).filter(payment=>payment.invoiceId===invoice.id)):[];
+ let runningPaid=0;
+ const historyRows=historyPayments.map(payment=>{
+  runningPaid+=num(payment.totalAmount??num(payment.amount)+num(payment.gstAmount));
+  const paymentReceipt=db.paymentReceipts.find(item=>item.paymentId===payment.id),historyPaid=num(paymentReceipt?.paidToDate??runningPaid),historyCredits=num(paymentReceipt?.balanceCredits??invoiceCredits(invoice)),historyOutstanding=num(paymentReceipt?.outstandingAmount??Math.max(0,num(invoice.totalAmount)-historyCredits-runningPaid));
+  return `<tr><td>${dateLabel(payment.paymentDate)}</td><td>${esc(paymentReceipt?.receiptNo||'—')}</td><td>${esc(payment.paymentMode||'—')}<small>${esc(payment.referenceNo||'')}</small></td><td>${money(payment.totalAmount??num(payment.amount)+num(payment.gstAmount))}</td><td>${money(historyPaid)}</td><td>${money(historyOutstanding)}</td></tr>`
+ }).join(''),paymentHistory=invoice?`<section class="quotation-section"><div class="quotation-section-heading"><h2>Invoice payment history</h2><span>Confirmed payments in date order</span></div><table class="quotation-items"><thead><tr><th>Date</th><th>Receipt</th><th>Mode / reference</th><th>Amount received</th><th>Paid to date</th><th>Balance after payment</th></tr></thead><tbody>${historyRows||'<tr><td colspan="6">No confirmed payments recorded.</td></tr>'}</tbody></table></section>`:'';
+ const content=`<div class="solar-quotation"><header class="quotation-letterhead">${logo?`<img class="quotation-logo" src="${logo}" alt="${esc(companyName())} logo">`:''}<div class="quotation-company"><h2>${esc(companyName())}</h2><p>${esc(receipt.sellerAddress||settings.address||'')}</p></div><div class="quotation-reference"><strong>PAYMENT RECEIPT</strong><span>${esc(receipt.receiptNo)}</span><small>${dateLabel(receipt.paymentDate)}</small></div></header><section class="quotation-hero"><div><p>PAYMENT RECEIVED</p><h1>Thank you for your payment</h1></div><div><span>AMOUNT RECEIVED</span><strong>${money(total)}</strong></div></section><section class="quotation-parties"><div><span>RECEIVED FROM</span><h2>${esc(lead?.customerName||'Customer')}</h2><p>${esc(lead?.phone||'')}</p><p>${esc(lead?.city||'')}</p></div><div><span>PAYMENT DETAILS</span><p>Payment date: ${dateLabel(receipt.paymentDate)}</p><p>Payment mode: ${esc(receipt.paymentMode||'—')}</p><p>Reference: ${esc(receipt.referenceNo||'—')}</p></div></section><section class="quotation-section"><div class="quotation-section-heading"><h2>Payment allocation</h2><span>Receipt details</span></div><table class="quotation-items"><thead><tr><th>Payment against</th><th>Invoice</th><th>Receipt number</th><th>Amount received</th></tr></thead><tbody><tr><td><strong>${esc(receipt.invoiceNo||receipt.kind||'Project payment')}</strong></td><td>${esc(receipt.invoiceNo||'—')}</td><td>${esc(receipt.receiptNo)}</td><td><strong>${money(total)}</strong></td></tr></tbody></table>${summary}</section>${paymentHistory}<footer class="quotation-acceptance quotation-acceptance-single"><div><strong>For ${esc(companyName())}</strong><span>Authorized signatory</span></div></footer></div>`;
  openPrintWindow(`Receipt ${receipt.receiptNo}`,content)
 }
 function openPayment(existing,milestone){let p=existing||{};if(!visible(db.leads).length){toast('Create a lead first.',true);return}if(existing?.id&&['Verified','Received','Disbursed'].includes(normalizePaymentStatus(existing.status))){toast('Confirmed payments are immutable. Use a credit note to adjust a related invoice.',true);return}const invoiceOptions=[{id:'',name:'No linked invoice'},...visible(db.invoices).filter(item=>['Issued','Partially Paid','Overdue'].includes(invoiceStatus(item))).map(item=>({id:item.id,name:`${item.invoiceNo} · ${leadOf(item.leadId)?.customerName||'Customer'} · ${money(invoiceOutstanding(item))} due`}))],milestoneOptions=[{id:'',name:'No linked milestone'},...visible(db.paymentMilestones).map(item=>({id:item.id,name:`${leadOf(item.leadId)?.customerName||'Customer'} · ${item.name} · ${money(item.amount)}`}))],loanOptions=[{id:'',name:'No lender link'},...visible(db.loans).map(item=>({id:item.id,name:`${leadOf(item.leadId)?.customerName||'Customer'} · ${item.bank} · ${item.applicationNo||item.status}`}))],paymentStatuses=canManageFinance()?['Promised','Verified','Cancelled']:['Promised'];openModal(existing?.id?'Edit payment':'Record payment','Partial and full payments are supported. A receipt is generated when a manager confirms a payment.',`${existing?`<div class="full">${esc(leadOf(p.leadId)?.customerName||'')}</div>`:formLead()}${select('invoiceId','Invoice (optional)',invoiceOptions,p.invoiceId||'',false)}${select('milestoneId','Payment milestone (optional)',milestoneOptions,p.milestoneId||milestone?.id||'',false)}${select('loanId','Lender disbursement (optional)',loanOptions,p.loanId||'',false)}${select('kind','Payment milestone',['Advance','Before execution','After installation','Booking Advance','Material Dispatch','Commissioning','Final Payment','Other'],p.kind||milestone?.name||'Advance')}${input('amount','Amount received (₹)',p.totalAmount??p.amount??milestone?.amount??'','number',true,'min="0.01" step="0.01"')}${select('paymentMode','Payment mode',PAYMENT_MODES,p.paymentMode||'Bank transfer')}${input('paymentDate','Payment date',p.paymentDate||today(),'date',true)}${input('referenceNo','Transaction / UTR / cheque reference',p.referenceNo||'')}${input('supportingDocument','Supporting document URL / reference',p.supportingDocument||'')}${input('idempotencyKey','Transaction idempotency key',p.idempotencyKey||'','text',false,'autocomplete="off"')}${select('status','Payment status',paymentStatuses,normalizePaymentStatus(p.status||'Promised'))}`,async x=>{
@@ -933,7 +1643,10 @@ function openPayment(existing,milestone){let p=existing||{};if(!visible(db.leads
  const paymentId=await writeRecord('payments',record,existing?.id);
  if(x.status==='Verified'){
   let receipt=db.paymentReceipts.find(item=>item.paymentId===paymentId);
-  if(!receipt){const receiptData={paymentId,receiptNo:`RCPT-${paymentId}`,invoiceId:invoice?.id||'',invoiceNo:invoice?.invoiceNo||'',leadId,assignedTo:lead.assignedTo,amount:receivedTotal,totalAmount:receivedTotal,paymentMode:x.paymentMode,paymentDate:x.paymentDate,referenceNo:x.referenceNo.trim(),sellerAddress:db.invoiceSettings?.address||'',createdAt:stamp(),createdBy:uid()};const receiptId=await writeRecord('paymentReceipts',receiptData);receipt=db.paymentReceipts.find(item=>item.id===receiptId);await writeRecord('payments',{receiptId,updatedAt:stamp()},paymentId)}
+  if(!receipt){
+   const balanceBasisTotal=invoice?num(invoice.totalAmount):contractValueForLead(leadId),balanceCredits=invoice?invoiceCredits(invoice):0,paidToDate=invoice?invoicePaid(invoice):verifiedPaymentsForLead(leadId).reduce((sum,payment)=>sum+num(payment.totalAmount??num(payment.amount)+num(payment.gstAmount)),0),receiptData={paymentId,receiptNo:invoice?nextInvoiceReceiptNumber(invoice):`RCPT-${paymentId}`,invoiceId:invoice?.id||'',invoiceNo:invoice?.invoiceNo||'',leadId,assignedTo:lead.assignedTo,amount:receivedTotal,totalAmount:receivedTotal,balanceBasisTotal,balanceCredits,paidToDate,outstandingAmount:Math.max(0,balanceBasisTotal-balanceCredits-paidToDate),paymentMode:x.paymentMode,paymentDate:x.paymentDate,referenceNo:x.referenceNo.trim(),sellerAddress:db.invoiceSettings?.address||'',createdAt:stamp(),createdBy:uid()};
+   const receiptId=await writeRecord('paymentReceipts',receiptData);receipt=db.paymentReceipts.find(item=>item.id===receiptId);await writeRecord('payments',{receiptId,updatedAt:stamp()},paymentId)
+  }
   if(paymentMilestone){const paidAfter=milestonePaid+receivedTotal;await writeRecord('paymentMilestones',{status:paidAfter>=num(paymentMilestone.amount)?'Paid':'Partially Paid',paidAmount:paidAfter,updatedAt:stamp()},paymentMilestone.id)}
  }
 },existing?.id?{recordType:'collection',recordId:existing.id}:null);
@@ -953,13 +1666,18 @@ function openPrintWindow(title,content){
 }
 function printQuote(id){
  const quote=db.quotations.find(item=>item.id===id);if(!quote){toast('Quotation not found.',true);return}
- const lead=leadOf(quote.leadId),lines=quote.lineItems?.length?quote.lineItems:[{productName:quote.productName||quote.systemType,quantity:quote.quantity||1,unitPrice:quote.unitPrice??quote.taxableValue??quote.price,gstRate:quote.gstRate}],taxableValue=lines.reduce((sum,item)=>sum+num(item.quantity)*num(item.unitPrice),0),gstAmount=lines.reduce((sum,item)=>sum+num(item.quantity)*num(item.unitPrice)*num(item.gstRate)/100,0),gross=num(quote.price)||taxableValue+gstAmount,centralSubsidy=num(quote.centralSubsidy),stateSubsidy=num(quote.stateSubsidy),customerPayable=quote.customerPayable??Math.max(0,gross-centralSubsidy-stateSubsidy),logo=quotationLogoData(),terms=[['Payment terms',quote.paymentTerms],['Customer scope',quote.customerScope],['Exclusions',quote.exclusions],['Warranty',quote.warranty]].filter(([,value])=>String(value||'').trim()),termMarkup=terms.map(([label,value])=>`<div class="quotation-term"><h3>${label}</h3><p>${esc(value)}</p></div>`).join(''),content=`<div class="solar-quotation"><header class="quotation-letterhead">${logo?`<img class="quotation-logo" src="${logo}" alt="${esc(companyName())} logo">`:''}<div class="quotation-company"><h2>${esc(companyName())}</h2><p>Solar EPC quotation</p></div><div class="quotation-reference"><strong>QUOTATION</strong><span>${esc(quote.id)}</span><small>${dateLabel(today())}</small></div></header><section class="quotation-hero"><div><p>ROOFTOP SOLAR PROPOSAL</p><h1>${fmtKw(quote.capacityKw)} ${esc(quote.systemType||'On-grid')} Solar EPC</h1></div><div><span>VALID UNTIL</span><strong>${dateLabel(quote.validUntil)}</strong></div></section><section class="quotation-parties"><div><span>CUSTOMER / BILL TO</span><h2>${esc(lead?.customerName||'Customer')}</h2><p>${esc(lead?.phone||'')}</p><p>${esc(lead?.city||'')}</p></div><div><span>INSTALLATION / SITE</span><h2>${esc(lead?.city||'Solar project site')}</h2><p>System type: ${esc(quote.systemType||'On-grid')}</p><p>DC array capacity: ${fmtKw(quote.capacityKw)}</p></div></section><section class="quotation-metrics"><div><span>DC ARRAY</span><strong>${fmtKw(quote.capacityKw)}</strong></div><div><span>SYSTEM TYPE</span><strong>${esc(quote.systemType||'On-grid')}</strong></div><div><span>ESTIMATED PRICE</span><strong>${money(gross)}</strong></div></section><section class="quotation-section"><div class="quotation-section-heading"><h2>Material / Work</h2><span>Project components and pricing</span></div><table class="quotation-items"><thead><tr><th>Material / work</th><th>Qty</th><th>Unit rate</th><th>Taxable</th><th>GST</th><th>Total</th></tr></thead><tbody>${lines.map(item=>{const taxable=num(item.quantity)*num(item.unitPrice),tax=taxable*num(item.gstRate)/100;return `<tr><td><strong>${esc(item.productName||'Solar project item')}</strong></td><td>${num(item.quantity)}</td><td>${money(item.unitPrice)}</td><td>${money(taxable)}</td><td>${num(item.gstRate)}%<small>${money(tax)}</small></td><td><strong>${money(taxable+tax)}</strong></td></tr>`}).join('')}</tbody></table><div class="quotation-totals"><div><span>Taxable value</span><strong>${money(taxableValue)}</strong></div><div><span>GST</span><strong>${money(gstAmount)}</strong></div><div><span>Central subsidy estimate</span><strong>− ${money(centralSubsidy)}</strong></div><div><span>State subsidy estimate</span><strong>− ${money(stateSubsidy)}</strong></div><div class="quotation-grand-total"><span>Estimated customer payable</span><strong>${money(customerPayable)}</strong></div><small>Subsidy is an estimate and is subject to scheme eligibility and approval.</small></div></section><section class="quotation-section"><div class="quotation-section-heading"><h2>Scope / inclusions</h2></div><p class="quotation-notes">${esc(quote.notes||'Refer to the listed material and work items.')}</p></section>${terms.length?`<section class="quotation-section"><div class="quotation-section-heading"><h2>Terms and conditions</h2></div><p class="quotation-validity">This quotation is valid until ${dateLabel(quote.validUntil)}.</p><div class="quotation-terms">${termMarkup}</div></section>`:''}<footer class="quotation-acceptance"><div><strong>For ${esc(companyName())}</strong><span>Authorized signatory</span></div><div><strong>Customer acceptance</strong><span>Name / signature / date</span></div></footer></div>`;
- const contentWithTerms=quote.termsAndConditions?content.replace('<div class="quotation-terms">',`<div class="quotation-terms"><div class="quotation-term"><h3>Terms and conditions</h3><p>${esc(quote.termsAndConditions)}</p></div>`):content,quotationContent=terms.length?contentWithTerms:contentWithTerms.replace('<footer class="quotation-acceptance">',`<section class="quotation-section"><div class="quotation-section-heading"><h2>Terms and conditions</h2></div><p class="quotation-validity">This quotation is valid until ${dateLabel(quote.validUntil)}.</p></section><footer class="quotation-acceptance">`);
- openPrintWindow(`Quotation ${quote.id}`,quotationContent)
+ const lead=leadOf(quote.leadId),lines=quote.lineItems?.length?quote.lineItems:[{productName:quote.productName||quote.systemType,quantity:quote.quantity||1,unitPrice:quote.unitPrice??quote.taxableValue??quote.price}],totals=calculateSolarQuoteTotals(lines,num(quote.gstRate??DEFAULT_GST_RATE)),taxableValue=num(quote.taxableValue??totals.taxableValue),gstAmount=num(quote.gstAmount??totals.gstAmount),gross=num(quote.price??totals.price),centralSubsidy=num(quote.centralSubsidy),stateSubsidy=num(quote.stateSubsidy),customerPayable=num(quote.customerPayable??gross),effectiveInvestment=num(quote.effectiveInvestment??Math.max(0,customerPayable-centralSubsidy-stateSubsidy)),logo=quotationLogoData(),terms=[['Terms and conditions',quote.termsAndConditions],['Payment terms',quote.paymentTerms],['Customer scope',quote.customerScope],['Company scope',quote.companyScope],['Exclusions',quote.exclusions],['Warranty',quote.warranty],['Bank details',quote.bankDetails]].filter(([,value])=>String(value||'').trim()),termMarkup=terms.map(([label,value])=>`<div class="quotation-term"><h3>${label}</h3><p>${esc(value)}</p></div>`).join('');
+ const rows=lines.map(item=>`<tr><td><strong>${esc(item.productName||'Solar project item')}</strong>${item.components?.length?`<div class="quotation-component-list">${item.components.map((component,index)=>`<div>${esc(solarKitComponentSummary(component,index))}</div>`).join('')}</div>`:''}</td><td>${num(item.quantity)}${item.unit?` ${esc(item.unit)}`:''}</td><td>${money(num(item.quantity)*num(item.unitPrice))}</td></tr>`).join('');
+ const taxRows=(quote.gstBreakdown||[]).filter(item=>num(item.taxableValue)>0).map(item=>`<div><span>${esc(item.name)} · ${num(item.allocationPercent)}% allocation at ${num(item.gstRate)}%</span><strong>${money(item.taxAmount)}</strong></div>`).join('');
+ const comparison=quote.comparisonOptions?.length?`<section class="quotation-section"><div class="quotation-section-heading"><h2>Package comparison</h2><span>Customer prices include configured GST</span></div><table class="quotation-items"><thead><tr><th>Package</th><th>System / structure</th><th>Customer price</th><th>Subsidy estimate</th><th>Net investment estimate</th></tr></thead><tbody>${quote.comparisonOptions.map(option=>`<tr><td><strong>${esc(option.category?.name||'Solar package')}</strong></td><td>${esc(option.system?.name||'')} · ${esc(option.structure?.name||'')}</td><td>${money(option.total)}</td><td>${money(option.subsidy?.amount)}</td><td><strong>${money(Math.max(0,num(option.total)-num(option.subsidy?.amount)))}</strong></td></tr>`).join('')}</tbody></table></section>`:'';
+ const alternativeBom=quote.comparisonOptions?.length?quote.comparisonOptions.filter(option=>option.category?.id!==quote.kitCategoryId).map(option=>`<section class="quotation-section"><div class="quotation-section-heading"><h2>${esc(option.category?.name||'Alternative')} option · Bill of materials</h2><span>${esc(option.bomTemplate?.name||'Configured BOM')}</span></div>${option.materials?.length?`<table class="quotation-items"><thead><tr><th>Material</th><th>Make / capacity</th><th>Quantity</th></tr></thead><tbody>${option.materials.map(item=>`<tr><td>${esc(item.description||'')}</td><td>${esc([item.make,item.capacity].filter(Boolean).join(' · '))}</td><td>${esc(item.quantity)}${item.uom?` ${esc(item.uom)}`:''}</td></tr>`).join('')}</tbody></table>`:'<p class="quotation-notes">No BOM materials were configured for this option.</p>'}</section>`).join(''):'';
+ const paymentPlan=quote.paymentPlan?.length?`<section class="quotation-section"><div class="quotation-section-heading"><h2>Payment milestones</h2></div><table class="quotation-items"><thead><tr><th>Milestone</th><th>Contract share</th><th>Amount</th></tr></thead><tbody>${quote.paymentPlan.map(item=>`<tr><td>${esc(item.name)}</td><td>${num(item.percent)}%</td><td>${money(item.amount)}</td></tr>`).join('')}</tbody></table></section>`:'';
+ const content=`<div class="solar-quotation"><header class="quotation-letterhead">${logo?`<img class="quotation-logo" src="${logo}" alt="${esc(companyName())} logo">`:''}<div class="quotation-company"><h2>${esc(companyName())}</h2><p>Solar EPC quotation</p></div><div class="quotation-reference"><strong>QUOTATION</strong><span>${esc(quote.id)}</span><small>${quote.version?`Version ${num(quote.version)} · `:''}${dateLabel(today())}</small></div></header><section class="quotation-hero"><div><p>ROOFTOP SOLAR PROPOSAL</p><h1>${fmtKw(quote.capacityKw)} ${esc(quote.systemType||'On-grid')} Solar EPC</h1></div><div><span>VALID UNTIL</span><strong>${dateLabel(quote.validUntil)}</strong></div></section><section class="quotation-parties"><div><span>CUSTOMER / BILL TO</span><h2>${esc(lead?.customerName||'Customer')}</h2><p>${esc(lead?.phone||'')}</p><p>${esc(lead?.city||'')}</p></div><div><span>INSTALLATION / SITE</span><h2>${esc(lead?.city||'Solar project site')}</h2><p>System type: ${esc(quote.systemType||'On-grid')}</p><p>DC array capacity: ${fmtKw(quote.capacityKw)}</p>${quote.configurationSnapshot?.structure?.name?`<p>Structure / scope: ${esc(quote.configurationSnapshot.structure.name)}</p>`:''}</div></section><section class="quotation-metrics"><div><span>DC ARRAY</span><strong>${fmtKw(quote.capacityKw)}</strong></div><div><span>SYSTEM TYPE</span><strong>${esc(quote.systemType||'On-grid')}</strong></div><div><span>PRICE INCLUDING GST</span><strong>${money(gross)}</strong></div></section>${comparison}${alternativeBom}<section class="quotation-section"><div class="quotation-section-heading"><h2>Material / Work</h2><span>Project components and package amount</span></div><table class="quotation-items"><thead><tr><th>Material / work</th><th>Qty</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><div class="quotation-totals"><div><span>Taxable value</span><strong>${money(taxableValue)}</strong></div><div><span>GST (${num(quote.gstRate??DEFAULT_GST_RATE).toFixed(2)}%)</span><strong>${money(gstAmount)}</strong></div>${taxRows}<div><span>Central subsidy estimate</span><strong>− ${money(centralSubsidy)}</strong></div><div><span>State subsidy estimate</span><strong>− ${money(stateSubsidy)}</strong></div><div class="quotation-grand-total"><span>Customer payable to company</span><strong>${money(customerPayable)}</strong></div><div><span>Estimated net investment after subsidy</span><strong>${money(effectiveInvestment)}</strong></div><small>Subsidy is an estimate and is subject to scheme eligibility and approval. It is not deducted from the company amount payable.</small></div></section>${paymentPlan}<section class="quotation-section"><div class="quotation-section-heading"><h2>Scope / inclusions</h2></div><p class="quotation-notes">${esc(quote.notes||'Refer to the listed material and work items.')}</p></section>${terms.length?`<section class="quotation-section"><div class="quotation-section-heading"><h2>Terms and conditions</h2></div><p class="quotation-validity">This quotation is valid until ${dateLabel(quote.validUntil)}.</p><div class="quotation-terms">${termMarkup}</div></section>`:`<section class="quotation-section"><div class="quotation-section-heading"><h2>Terms and conditions</h2></div><p class="quotation-validity">This quotation is valid until ${dateLabel(quote.validUntil)}.</p></section>`}<footer class="quotation-acceptance"><div><strong>For ${esc(companyName())}</strong><span>${esc(quote.authorizedSignatory||'Authorized signatory')}</span></div><div><strong>Customer acceptance</strong><span>Name / signature / date</span></div></footer></div>`;
+ openPrintWindow(`Quotation ${quote.id}`,content)
 }
 function printInvoice(id){
  const payment=db.payments.find(item=>item.id===id);if(!payment){toast('Payment record not found.',true);return}
- const lead=leadOf(payment.leadId),taxable=num(payment.amount),gst=num(payment.gstAmount??taxable*num(payment.gstRate)/100),content=`<h1>GST Invoice</h1><p><strong>${esc(companyName())}</strong><br>GSTIN: ${esc(payment.gstin||'Not configured')}</p><p>Invoice: ${esc(payment.invoiceNo||payment.id)} · Date: ${dateLabel(payment.dueDate)}</p><p><strong>Bill to:</strong> ${esc(lead?.customerName||'Customer')}<br>${esc(lead?.city||'')} · ${esc(lead?.phone||'')}</p><table><thead><tr><th>Description</th><th>Taxable value</th><th>CGST</th><th>SGST</th><th>Total</th></tr></thead><tbody><tr><td>${esc(payment.kind)} for solar project</td><td>${money(taxable)}</td><td>${money(gst/2)}</td><td>${money(gst/2)}</td><td>${money(taxable+gst)}</td></tr></tbody></table><p class="total">Invoice total: ${money(taxable+gst)}</p>`;
+ const lead=leadOf(payment.leadId),taxable=num(payment.amount),gst=num(payment.gstAmount??taxable*num(payment.gstRate)/100),total=taxable+gst,logo=quotationLogoData(),settings=db.invoiceSettings||defaultInvoiceSettings(),content=`<div class="solar-quotation"><header class="quotation-letterhead">${logo?`<img class="quotation-logo" src="${logo}" alt="${esc(companyName())} logo">`:''}<div class="quotation-company"><h2>${esc(companyName())}</h2><p>${esc(settings.address||'')}${payment.gstin?` · GSTIN: ${esc(payment.gstin)}`:''}</p></div><div class="quotation-reference"><strong>INVOICE</strong><span>${esc(payment.invoiceNo||payment.id)}</span><small>${dateLabel(payment.paymentDate||payment.dueDate)}</small></div></header><section class="quotation-hero"><div><p>PROJECT PAYMENT</p><h1>${esc(payment.kind||'Solar project payment')}</h1></div><div><span>INVOICE TOTAL</span><strong>${money(total)}</strong></div></section><section class="quotation-parties"><div><span>BILL TO</span><h2>${esc(lead?.customerName||'Customer')}</h2><p>${esc(lead?.phone||'')}</p><p>${esc(lead?.city||'')}</p></div><div><span>INVOICE DETAILS</span><p>Invoice number: ${esc(payment.invoiceNo||payment.id)}</p><p>Invoice date: ${dateLabel(payment.paymentDate||payment.dueDate)}</p></div></section><section class="quotation-section"><div class="quotation-section-heading"><h2>Invoice items</h2><span>Solar project payment</span></div><table class="quotation-items"><thead><tr><th>Description</th><th>Taxable value</th><th>CGST</th><th>SGST</th><th>Total</th></tr></thead><tbody><tr><td><strong>${esc(payment.kind||'Solar project payment')}</strong></td><td>${money(taxable)}</td><td>${money(gst/2)}</td><td>${money(gst/2)}</td><td><strong>${money(total)}</strong></td></tr></tbody></table><div class="quotation-totals"><div><span>Taxable amount</span><strong>${money(taxable)}</strong></div><div><span>GST</span><strong>${money(gst)}</strong></div><div class="quotation-grand-total"><span>Invoice total</span><strong>${money(total)}</strong></div></div></section><footer class="quotation-acceptance quotation-acceptance-single"><div><strong>For ${esc(companyName())}</strong><span>Authorized signatory</span></div></footer></div>`;
  openPrintWindow(`Invoice ${payment.invoiceNo||payment.id}`,content)
 }
 function exportReport(){
@@ -979,6 +1697,13 @@ $('#top-avatar').addEventListener('click',()=>goPage('profile'));
 const globalSearchInput=$('#global-search-input'),globalSearchResults=$('#global-search-results');globalSearchInput.addEventListener('input',renderGlobalSearch);globalSearchInput.addEventListener('keydown',e=>{if(e.key==='ArrowDown'){globalSearchResults.querySelector('[data-global-search-type]')?.focus();e.preventDefault()}else if(e.key==='Enter'){globalSearchResults.querySelector('[data-global-search-type]')?.click();e.preventDefault()}else if(e.key==='Escape')closeGlobalSearch()});globalSearchResults.addEventListener('click',e=>{const result=e.target.closest('[data-global-search-type]');if(result)openGlobalSearchResult(result.dataset.globalSearchType,result.dataset.globalSearchId)});document.addEventListener('click',e=>{if(!e.target.closest('#global-search'))closeGlobalSearch()});
 $('#page-content').addEventListener('click',e=>{
  const tablePage=e.target.closest('[data-table-page]');if(tablePage){tablePages[tablePage.dataset.tablePage]=Number(tablePage.dataset.pageNumber);render();return}
+ const configTab=e.target.closest('[data-config-tab]');if(configTab){quotationConfigTab=configTab.dataset.configTab;render();return}
+ const newConfig=e.target.closest('[data-new-quotation-config]');if(newConfig){openQuotationConfigRecord(newConfig.dataset.newQuotationConfig);return}
+ const editConfig=e.target.closest('[data-edit-quotation-config]');if(editConfig){const record=db[editConfig.dataset.editQuotationConfig]?.find(item=>item.id===editConfig.dataset.id);if(record)openQuotationConfigRecord(editConfig.dataset.editQuotationConfig,record);else toast('Configuration record not found.',true);return}
+ const cloneConfig=e.target.closest('[data-clone-quotation-config]');if(cloneConfig){const record=db[cloneConfig.dataset.cloneQuotationConfig]?.find(item=>item.id===cloneConfig.dataset.id);if(record)openQuotationConfigRecord(cloneConfig.dataset.cloneQuotationConfig,record,true);else toast('BOM template not found.',true);return}
+ if(e.target.closest('[data-export-pricebook]')){downloadPriceBookCsv();return}
+ if(e.target.closest('[data-export-solar-packages]')){downloadSolarPackagesCsv();return}
+ if(e.target.closest('[data-pricebook-bulk]')){openPriceBookBulkUpdate();return}
  const importPage=e.target.closest('[data-import-page]');if(importPage){saveVisibleLeadImportEdits();leadImportPage=Number(importPage.dataset.importPage);render();return}
  if(e.target.closest('[data-import-cancel]')){if(busy)return;leadImportRows=null;leadImportReady=false;leadImportProgress=null;render();return}
  if(e.target.closest('[data-import-update]')){updateLeadImportPreview();return}
@@ -986,7 +1711,13 @@ $('#page-content').addEventListener('click',e=>{
  if(e.target.closest('[data-dashboard-export]')){csvExport();return}
  if(e.target.closest('[data-report-export]')){exportReport();return}
  if(e.target.closest('[data-finance-export]')){exportFinanceReport();return}
- if(e.target.closest('[data-finance-print]')){window.print();return}
+ if(e.target.closest('[data-finance-print]')){
+  const report=$('#page-content').cloneNode(true);
+  report.querySelectorAll('.head-actions').forEach(actions=>actions.remove());
+  const content=`<div class="finance-report-print"><header class="finance-report-heading"><div class="eyebrow">${esc($('#page-eyebrow').textContent)}</div><h1>${esc($('#page-title').textContent)}</h1><p>${esc($('#page-subtitle').textContent)}</p></header><div class="finance-report-content">${report.innerHTML}</div></div>`;
+  openPrintWindow('Finance report',content);
+  window.print();return
+ }
  if(e.target.closest('[data-invoice-settings]')){invoiceSettingsForm();return}
  if(e.target.closest('[data-credit-note]')){openCreditNote();return}
  const milestonePayment=e.target.closest('[data-milestone-payment]');if(milestonePayment){const milestone=db.paymentMilestones.find(item=>item.id===milestonePayment.dataset.milestonePayment);if(milestone){const paid=db.payments.filter(payment=>payment.milestoneId===milestone.id&&['Verified','Received','Disbursed'].includes(normalizePaymentStatus(payment.status))).reduce((sum,payment)=>sum+num(payment.totalAmount??payment.amount),0);openPayment({leadId:milestone.leadId,kind:milestone.name,amount:Math.max(0,num(milestone.amount)-paid),milestoneId:milestone.id,status:'Promised'})}return}
@@ -995,6 +1726,8 @@ $('#page-content').addEventListener('click',e=>{
  const createCompany=e.target.closest('[data-create-company]');if(createCompany){createCompanyWorkspace();return}
  const updateCompany=e.target.closest('[data-update-company-plan]');if(updateCompany){updateCompanyPlan(updateCompany.dataset.updateCompanyPlan);return}
  const toggleCompany=e.target.closest('[data-toggle-company-status]');if(toggleCompany){toggleCompanyStatus(toggleCompany.dataset.toggleCompanyStatus);return}
+ if(e.target.closest('[data-new-solar-kit]')){openSolarKit();return}
+ const solarKitEdit=e.target.closest('[data-edit-solar-kit]');if(solarKitEdit){const kit=db.solarKits.find(item=>item.id===solarKitEdit.dataset.editSolarKit);if(kit)openSolarKit(kit);return}
  if(e.target.closest('[data-new-catalog]')){openCatalogItem();return}
  const catalogEdit=e.target.closest('[data-edit-catalog]');if(catalogEdit){const item=db.catalog.find(row=>row.id===catalogEdit.dataset.editCatalog);if(item)openCatalogItem(item);return}
  if(e.target.closest('[data-dashboard-new-lead]')){openLead();return}
@@ -1006,7 +1739,7 @@ $('#page-content').addEventListener('click',e=>{
  const id=action.dataset.id,type=action.dataset.act;
  if(type==='new-amc'){openFeatureRecord('amc');return}
  if(type==='new-serviceTicket'){openFeatureRecord('serviceTicket');return}
- const col=type.replace('edit-',''),mapping={lead:['leads',openLead],followup:['followups',openFollowup],quotation:['quotations',openQuote],installation:['installations',openInstallation],payment:['payments',openPayment],team:['users',openTeam],survey:['surveys',openFeatureRecord],subsidy:['subsidies',openFeatureRecord],loan:['loans',openFeatureRecord],inventory:['inventory',openFeatureRecord],amc:['amcs',openFeatureRecord],serviceTicket:['serviceTickets',openFeatureRecord]};
+ const col=type.replace('edit-',''),mapping={lead:['leads',openLead],followup:['followups',openFollowup],quotation:['quotations',(record)=>openQuote(record,record.status!=='Draft')],installation:['installations',openInstallation],payment:['payments',openPayment],team:['users',openTeam],survey:['surveys',openFeatureRecord],subsidy:['subsidies',openFeatureRecord],loan:['loans',openFeatureRecord],inventory:['inventory',openFeatureRecord],amc:['amcs',openFeatureRecord],serviceTicket:['serviceTickets',openFeatureRecord]};
  const entry=mapping[col];if(!entry)return;
  const record=db[entry[0]]?.find(item=>item.id===id);if(!record){toast('Record not found',true);return}
  if(['survey','subsidy','loan','inventory','amc','serviceTicket'].includes(col))entry[1](col,record);else entry[1](record)
@@ -1019,7 +1752,7 @@ $('#logout').onclick=async()=>{if(isDemo){const others=db.users.filter(u=>u.acti
 $('#demo-reset').onclick=()=>{if(!confirm('Reset demo data and discard your test changes?'))return;db=seed();try{localStorage.removeItem(demoUserStorageKey)}catch{};currentUser=db.users[0];saveDemo();showApp();toast('Demo data restored')};
 window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();closeGlobalSearch()}});
 $('#page-content').addEventListener('click',event=>{if(event.target.closest('[data-remove-quotation-logo]'))saveQuotationLogo('').catch(error=>toast(error.message||'Unable to remove the quotation logo.',true))});
-$('#page-content').addEventListener('change',async event=>{const input=event.target.closest('[data-quotation-logo-file]');if(!input)return;const file=input.files?.[0];input.value='';try{await uploadQuotationLogo(file)}catch(error){toast(error.message||'Unable to save the quotation logo.',true)}});
+$('#page-content').addEventListener('change',async event=>{const packageInput=event.target.closest('[data-import-solar-packages]');if(packageInput){const file=packageInput.files?.[0];packageInput.value='';try{await importSolarPackagesCsv(file)}catch(error){toast(error.message||'Unable to import solar packages.',true)}return}const priceBookInput=event.target.closest('[data-import-pricebook]');if(priceBookInput){const file=priceBookInput.files?.[0];priceBookInput.value='';try{await importPriceBookCsv(file)}catch(error){toast(error.message||'Unable to import customer prices.',true)}return}const input=event.target.closest('[data-quotation-logo-file]');if(!input)return;const file=input.files?.[0];input.value='';try{await uploadQuotationLogo(file)}catch(error){toast(error.message||'Unable to save the quotation logo.',true)}});
 const config=window.SOLARCRM_FIREBASE_CONFIG||{};
 function openLogin(){
  $('#public-site').classList.add('hidden');$('#login').classList.remove('hidden');$('#login-error').textContent='';
